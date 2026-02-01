@@ -10,6 +10,7 @@ keywords = ["mqtt", "rpc", "iot", "async", "messaging"]
 categories = ["network-programming", "asynchronous"]
 
 [dependencies]
+log = { version = "0.4", optional = true }
 bytes = "1"
 rumqttc = "0.25"
 serde = { version = "1", features = ["derive"] }
@@ -29,3 +30,8 @@ path = "examples/math_server.rs"
 [[example]]
 name = "math_client"
 path = "examples/math_client.rs"
+
+
+[features]
+default = []
+logging = ["log"]

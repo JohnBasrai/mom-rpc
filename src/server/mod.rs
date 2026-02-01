@@ -2,7 +2,6 @@
 mod handler;
 
 use crate::error::{Error, Result};
-use crate::protocol::{CorrelationId, RpcResponse};
 use handler::{wrap_handler, BoxedHandler};
 use rumqttc::{AsyncClient, Publish, QoS};
 use serde::de::DeserializeOwned;
@@ -104,7 +103,7 @@ impl RpcServer {
     /// ```
     pub async fn handle<F, Fut, Req, Resp>(&mut self, topic: &str, handler: F) -> Result<()>
     where
-        F: Fn(Req) -> Fut + Send + Sync + 'static,
+        F: Fn(Req) -> Fut + Send + Sync + Clone + 'static,
         Fut: Future<Output = Result<Resp>> + Send + 'static,
         Req: DeserializeOwned + Send + 'static,
         Resp: Serialize + Send + 'static,
@@ -116,7 +115,7 @@ impl RpcServer {
         self.mqtt
             .subscribe(&request_topic, QoS::AtLeastOnce)
             .await
-            .map_err(|e| Error::Mqtt(rumqttc::ClientError::from(e)));
+            .map_err(|e| Error::from_transport(crate::error::TransportError::Client(e)));
 
         // Store handler
         let wrapped = wrap_handler(handler);
@@ -149,6 +148,7 @@ impl RpcServer {
     ///
     /// Extracts the topic, correlation ID, and response topic from JSON payload,
     /// then spawns a task to execute the handler.
+    #[allow(dead_code)]
     pub(crate) async fn handle_request(&self, publish: Publish) -> Result<()> {
         // ---
         // Extract topic (remove /request suffix)
@@ -157,57 +157,23 @@ impl RpcServer {
             .strip_suffix("/request")
             .ok_or_else(|| Error::HandlerNotFound(full_topic.clone()))?;
 
-        // Parse request to extract correlation_id and response_topic
-        let request_json: serde_json::Value = serde_json::from_slice(&publish.payload)?;
-
-        let correlation_id_str = request_json
-            .get("correlation_id")
-            .and_then(|v| v.as_str())
-            .ok_or(Error::InvalidResponse)?;
-        let correlation_id = CorrelationId::from(correlation_id_str.to_string());
-
-        let response_topic = request_json
-            .get("response_topic")
-            .and_then(|v| v.as_str())
-            .ok_or(Error::MissingResponseTopic)?
-            .to_string();
-
         // Look up handler
-        let handlers: tokio::sync::RwLockReadGuard<HashMap<String, BoxedHandler>> =
-            self.handlers.read().await;
-        let handler = handlers
-            .get(topic)
-            .ok_or_else(|| Error::HandlerNotFound(topic.to_string()))?
-            .clone();
-        drop(handlers); // Release lock before spawning
+        let handler = {
+            let handlers = self.handlers.read().await;
+            handlers
+                .get(topic)
+                .cloned()
+                .ok_or_else(|| Error::HandlerNotFound(topic.to_string()))?
+        };
 
-        // Clone what we need for the spawned task
-        let mqtt = self.mqtt.clone();
-        let request_bytes = publish.payload.clone();
+        // Run handler (handler returns (response_topic, response_bytes))
+        let (response_topic, response_bytes) = handler(publish.payload).await?;
 
-        // Spawn handler task
-        tokio::spawn(async move {
-            // Execute handler
-            let response_result = handler(request_bytes).await;
-
-            // Build response
-            match response_result {
-                Ok(response_payload) => {
-                    // Wrap with correlation_id
-                    let response = RpcResponse::new(correlation_id, response_payload);
-
-                    if let Ok(response_json) = serde_json::to_vec(&response) {
-                        // Publish response
-                        let _ = mqtt
-                            .publish(response_topic, QoS::AtLeastOnce, false, response_json)
-                            .await;
-                    }
-                }
-                Err(_e) => {
-                    // TODO: Send error response
-                }
-            }
-        });
+        // Publish response
+        self.mqtt
+            .publish(response_topic, QoS::AtLeastOnce, false, response_bytes)
+            .await
+            .map_err(|e| Error::from_transport(crate::error::TransportError::Client(e)))?;
 
         Ok(())
     }

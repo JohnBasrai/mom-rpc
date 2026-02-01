@@ -82,7 +82,7 @@ impl RpcClient {
         // Subscribe to response topic
         mqtt.subscribe(&response_topic, QoS::AtLeastOnce)
             .await
-            .map_err(|e| rumqttc::ClientError::from(e));
+            .map_err(|e| e);
 
         let pending = Arc::new(Mutex::new(PendingRequests::new()));
 
@@ -208,6 +208,7 @@ impl RpcClient {
     /// Handle an incoming MQTT message
     ///
     /// Extracts correlation ID and delivers response to waiting Future.
+    #[allow(dead_code)]
     pub(crate) async fn handle_message(&self, publish: Publish) {
         // ---
         // Parse response to extract correlation_id
@@ -237,7 +238,11 @@ impl RpcClient {
     {
         // ---
         let response_topic = format!("responses/{}", self.client_id);
-        let request = RpcRequest::new(correlation_id, response_topic, payload);
+        let request = RpcRequest {
+            correlation_id,
+            response_topic,
+            payload,
+        };
         let payload_json = serde_json::to_vec(&request)?;
 
         let request_topic = format!("{}/request", topic);
@@ -245,7 +250,7 @@ impl RpcClient {
         self.mqtt
             .publish(request_topic, QoS::AtLeastOnce, false, payload_json)
             .await
-            .map_err(|e| rumqttc::ClientError::from(e));
+            .map_err(|e| e);
 
         Ok(())
     }

@@ -94,7 +94,7 @@ async fn test_concurrent_requests() -> Result<(), Error> {
     // Send multiple concurrent requests
     let mut handles = vec![];
     for i in 1..=5 {
-        let client = &client;
+        let client = client.clone();
         let handle = tokio::spawn(async move {
             let request = TestRequest { value: i };
             let response: TestResponse = client

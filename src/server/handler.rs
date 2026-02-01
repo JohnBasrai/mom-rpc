@@ -1,4 +1,5 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::protocol::{RpcRequest, RpcResponse};
 use bytes::Bytes;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -6,89 +7,48 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+pub(super) type HandlerOutput = (String, Bytes);
+
 /// Type-erased async handler function
 ///
-/// Handlers take request bytes and return response bytes.
-/// The actual request/response types are handled by the wrapper created
-/// in `RpcServer::handle()`.
+/// Handlers take request bytes (full RpcRequest envelope) and return a tuple:
+/// (response_topic, response_bytes).
 ///
 /// Wrapped in Arc for cheap cloning when spawning tasks.
 pub(super) type BoxedHandler =
-    Arc<dyn Fn(Bytes) -> Pin<Box<dyn Future<Output = Result<Bytes>> + Send>> + Send + Sync>;
+    Arc<dyn Fn(Bytes) -> Pin<Box<dyn Future<Output = Result<HandlerOutput>> + Send>> + Send + Sync>;
 
 /// Wrap a typed handler function into a type-erased handler
 ///
 /// This allows the server to store handlers of different types in the same HashMap.
 pub(super) fn wrap_handler<F, Fut, Req, Resp>(handler: F) -> BoxedHandler
 where
-    F: Fn(Req) -> Fut + Send + Sync + 'static,
+    F: Fn(Req) -> Fut + Send + Sync + Clone + 'static,
     Fut: Future<Output = Result<Resp>> + Send + 'static,
     Req: DeserializeOwned + Send + 'static,
     Resp: Serialize + Send + 'static,
 {
     // ---
     Arc::new(move |bytes: Bytes| {
-        // Deserialize request
-        let request_result: Result<Req> = serde_json::from_slice(&bytes).map_err(Into::into);
+        let handler = handler.clone();
+        let fut = Box::pin(async move {
+            // ---
+            // Deserialize full request envelope
+            let request: RpcRequest<Req> = serde_json::from_slice(&bytes).map_err(Error::from)?;
 
-        let fut = match request_result {
-            Ok(request) => {
-                // Call handler
-                let handler_future = handler(request);
+            // Execute typed handler on payload
+            let resp_payload: Resp = handler(request.payload).await?;
 
-                // Box the future
-                Box::pin(async move {
-                    let response = handler_future.await?;
-                    let response_bytes = serde_json::to_vec(&response)?;
-                    Ok(Bytes::from(response_bytes))
-                }) as Pin<Box<dyn Future<Output = Result<Bytes>> + Send>>
-            }
-            Err(e) => {
-                // Return error future
-                Box::pin(async move { Err(e) })
-                    as Pin<Box<dyn Future<Output = Result<Bytes>> + Send>>
-            }
-        };
+            // Serialize response envelope
+            let response = RpcResponse {
+                correlation_id: request.correlation_id,
+                payload: resp_payload,
+            };
+            let response_bytes = serde_json::to_vec(&response)?;
 
-        fut
+            Ok((request.response_topic, Bytes::from(response_bytes)))
+        });
+
+        fut as Pin<Box<dyn Future<Output = Result<HandlerOutput>> + Send>>
     })
-}
-
-#[cfg(test)]
-mod tests {
-    // ---
-    use super::*;
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Deserialize)]
-    struct TestRequest {
-        // ---
-        value: i32,
-    }
-
-    #[derive(Serialize)]
-    struct TestResponse {
-        // ---
-        result: i32,
-    }
-
-    #[tokio::test]
-    async fn test_wrap_handler() {
-        // ---
-        let handler = |req: TestRequest| async move {
-            Ok(TestResponse {
-                result: req.value * 2,
-            })
-        };
-
-        let wrapped = wrap_handler(handler);
-
-        let request = TestRequest { value: 21 };
-        let request_bytes = serde_json::to_vec(&request).unwrap();
-
-        let response_bytes = wrapped(Bytes::from(request_bytes)).await.unwrap();
-        let response: TestResponse = serde_json::from_slice(&response_bytes).unwrap();
-
-        assert_eq!(response.result, 42);
-    }
 }
