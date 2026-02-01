@@ -1,0 +1,31 @@
+[package]
+name = "mqtt-rpc-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["John Basrai"]
+description = "RPC semantics over MQTT pub/sub with request/response correlation"
+license = "MIT"
+repository = "https://github.com/JohnBasrai/mqtt-rpc-rs"
+keywords = ["mqtt", "rpc", "iot", "async", "messaging"]
+categories = ["network-programming", "asynchronous"]
+
+[dependencies]
+bytes = "1"
+rumqttc = "0.25"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1.11", features = ["v4", "serde"] }
+
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[[example]]
+name = "math_server"
+path = "examples/math_server.rs"
+
+[[example]]
+name = "math_client"
+path = "examples/math_client.rs"
