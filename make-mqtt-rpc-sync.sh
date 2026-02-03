@@ -1,9 +1,11 @@
 #!/bin/bash
 
-tar cfvz make-mqtt-rpc-sync.gz \
-    .github \
+#CHANGELOG.md \
+# .github \
+
+
+tar cfvz make-mqtt-rpc-sync.tar.gz \
     .gitignore \
-    CHANGELOG.md \
     CONTRIBUTING.md \
     Cargo.lock \
     Cargo.toml \

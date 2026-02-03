@@ -1,145 +1,133 @@
-//! Integration tests for mqtt-rpc-rs
-//!
-//! These tests require a running mosquitto broker on localhost:1883
 
-use mqtt_rpc_rs::{Error, RpcClient, RpcServer};
-use rumqttc::{AsyncClient, MqttOptions};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-struct TestRequest {
-    // ---
-    value: i32,
+use mqtt_rpc_rs::{RpcClient, RpcClientBuilder, RpcConfig, RpcServer, RpcServerBuilder};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AddRequest {
+    a: i32,
+    b: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-struct TestResponse {
-    // ---
-    result: i32,
+#[derive(Debug, Serialize, Deserialize)]
+struct AddResponse {
+    sum: i32,
 }
 
-async fn setup_mqtt_client(client_id: &str) -> (AsyncClient, tokio::task::JoinHandle<()>) {
+async fn start_math_server(node_id: &str) -> Result<RpcServer> {
     // ---
-    let mut mqtt_options = MqttOptions::new(client_id, "localhost", 1883);
-    mqtt_options.set_keep_alive(Duration::from_secs(5));
+    let config = RpcConfig::new("mqtt://localhost:1883").with_keep_alive_secs(5);
 
-    let (client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
+    let server = RpcServerBuilder::new(node_id, config).start().await?;
 
-    let handle = tokio::spawn(async move {
-        loop {
-            if eventloop.poll().await.is_err() {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-        }
+    server.register("add", |bytes| {
+        // ---
+        let req: AddRequest = serde_json::from_slice(&bytes).expect("failed to decode request");
+
+        let resp = AddResponse { sum: req.a + req.b };
+
+        serde_json::to_vec(&resp).expect("failed to encode response")
     });
 
-    // Give eventloop time to connect
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    Ok(server)
+}
 
-    (client, handle)
+async fn start_client(node_id: &str) -> Result<RpcClient> {
+    // ---
+    let config = RpcConfig::new("mqtt://localhost:1883").with_keep_alive_secs(5);
+    RpcClientBuilder::new(node_id, config).start().await
 }
 
 #[tokio::test]
-async fn test_basic_request_response() -> Result<(), Error> {
+async fn test_basic_request() -> Result<()> {
     // ---
-    // Setup server
-    let (server_mqtt, _server_handle) = setup_mqtt_client("test-server-01").await;
-    let mut server = RpcServer::new(server_mqtt).await?;
+    #[cfg(feature = "logging")]
+    init_logging();
 
-    server
-        .handle("test/echo", |req: TestRequest| async move {
-            Ok(TestResponse {
-                result: req.value * 2,
-            })
-        })
+    let _server = start_math_server("test-server-basic").await?;
+    let client = start_client("test-client-basic").await?;
+
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    let resp: AddResponse = client
+        .request_to("test-server-basic", "add", AddRequest { a: 2, b: 3 })
         .await?;
 
-    // Setup client
-    let (client_mqtt, _client_handle) = setup_mqtt_client("test-client-01").await;
-    let client = RpcClient::new(client_mqtt, "test-client-01").await?;
-
-    // Send request
-    let request = TestRequest { value: 21 };
-    let response: TestResponse = client
-        .request_timeout("test/echo", &request, Some(Duration::from_secs(5)))
-        .await?;
-
-    assert_eq!(response.result, 42);
-
+    assert_eq!(resp.sum, 5);
     Ok(())
 }
 
 #[tokio::test]
-async fn test_concurrent_requests() -> Result<(), Error> {
+async fn test_concurrent_requests() -> Result<()> {
     // ---
-    // Setup server
-    let (server_mqtt, _server_handle) = setup_mqtt_client("test-server-02").await;
-    let mut server = RpcServer::new(server_mqtt).await?;
+    #[cfg(feature = "logging")]
+    init_logging();
 
-    server
-        .handle("test/double", |req: TestRequest| async move {
-            // Simulate some processing time
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            Ok(TestResponse {
-                result: req.value * 2,
-            })
-        })
-        .await?;
+    let _server = start_math_server("test-server-concurrent").await?;
+    let client = start_client("test-client-concurrent").await?;
 
-    // Setup client
-    let (client_mqtt, _client_handle) = setup_mqtt_client("test-client-02").await;
-    let client = RpcClient::new(client_mqtt, "test-client-02").await?;
+    let mut handles = Vec::new();
 
-    // Send multiple concurrent requests
-    let mut handles = vec![];
-    for i in 1..=5 {
-        let client = &client;
-        let handle = tokio::spawn(async move {
-            let request = TestRequest { value: i };
-            let response: TestResponse = client
-                .request_timeout("test/double", &request, Some(Duration::from_secs(5)))
-                .await?;
-            Ok::<_, Error>((i, response.result))
-        });
-        handles.push(handle);
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    for i in 0..10 {
+        let c = client.clone();
+        handles.push(tokio::spawn(async move {
+            let resp: AddResponse = c
+                .request_to("test-server-concurrent", "add", AddRequest { a: i, b: i })
+                .await
+                .unwrap();
+            resp.sum
+        }));
     }
 
-    // Wait for all responses
-    for handle in handles {
-        let (input, output) = handle.await.unwrap()?;
-        assert_eq!(output, input * 2);
+    for (i, h) in handles.into_iter().enumerate() {
+        let sum = h.await?;
+        assert_eq!(sum, (i as i32) * 2);
     }
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_timeout() -> Result<(), Error> {
+async fn test_timeout() -> Result<()> {
     // ---
-    // Setup server that doesn't respond
-    let (server_mqtt, _server_handle) = setup_mqtt_client("test-server-03").await;
-    let mut server = RpcServer::new(server_mqtt).await?;
+    #[cfg(feature = "logging")]
+    init_logging();
 
-    server
-        .handle("test/slow", |_req: TestRequest| async move {
-            // Never respond
-            tokio::time::sleep(Duration::from_secs(10)).await;
-            Ok(TestResponse { result: 0 })
-        })
+    // Server exists but does not register a handler.
+    let config = RpcConfig::new("mqtt://localhost:1883").with_keep_alive_secs(5);
+    let _server = RpcServerBuilder::new("test-server-timeout", config)
+        .start()
         .await?;
 
-    // Setup client
-    let (client_mqtt, _client_handle) = setup_mqtt_client("test-client-03").await;
-    let client = RpcClient::new(client_mqtt, "test-client-03").await?;
+    let client = start_client("test-client-timeout").await?;
 
-    // Send request with short timeout
-    let request = TestRequest { value: 1 };
-    let result: Result<TestResponse, _> = client
-        .request_timeout("test/slow", &request, Some(Duration::from_millis(100)))
-        .await;
+    std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    assert!(matches!(result, Err(Error::Timeout)));
+    let fut = client.request_to::<AddRequest, AddResponse>(
+        "test-server-timeout",
+        "add",
+        AddRequest { a: 1, b: 1 },
+    );
+
+    let res = tokio::time::timeout(Duration::from_millis(200), fut).await;
+
+    assert!(res.is_err(), "request unexpectedly completed");
 
     Ok(())
+}
+
+#[cfg(feature = "logging")]
+fn init_logging() {
+    // ---
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        env_logger::builder()
+            .is_test(true)
+            .filter_level(log::LevelFilter::Debug)
+            .init();
+    });
 }

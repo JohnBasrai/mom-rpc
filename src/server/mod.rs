@@ -1,214 +1,180 @@
-/// RPC server for handling requests and sending responses
+// src/server/mod.rs
+//! RPC server for handling requests and sending responses.
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use bytes::Bytes;
+
+use super::{
+    // ---
+    Address,
+    Envelope,
+    Error,
+    PublishOptions,
+    Result,
+    Subscription,
+    TransportConsumer,
+    TransportPtr,
+};
+
 mod handler;
 
-use crate::error::{Error, Result};
-use crate::protocol::{CorrelationId, RpcResponse};
 use handler::{wrap_handler, BoxedHandler};
-use rumqttc::{AsyncClient, Publish, QoS};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::collections::HashMap;
-use std::future::Future;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
-/// RPC server for handling requests over MQTT
+/// Acquire a mutex guard, intentionally ignoring poisoning.
 ///
-/// Registers handlers for specific topics and executes them concurrently
-/// when requests arrive. Each handler runs in its own spawned task.
+/// Mutex poisoning indicates that another task panicked while holding the lock.
+/// In this server, the protected state is a best-effort handler registry
+/// (method → handler). There are no cross-field invariants whose violation
+/// could cause memory unsafety or systemic corruption.
 ///
-/// # Example
+/// The worst possible outcome is a missing handler dispatch, which is
+/// acceptable for an RPC server.
+fn lock_ignore_poison<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    // ---
+    match m.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+// Key=method, value=handler
+type HandlerMap = HashMap<String, BoxedHandler>;
+
+/// Running RPC server instance.
 ///
-/// ```no_run
-/// use mqtt_rpc_rs::RpcServer;
-/// use rumqttc::{MqttOptions, AsyncClient};
-/// use serde::{Serialize, Deserialize};
-///
-/// #[derive(Deserialize)]
-/// struct Request { value: i32 }
-///
-/// #[derive(Serialize)]
-/// struct Response { result: i32 }
-///
-/// # async fn example() -> Result<(), mqtt_rpc_rs::Error> {
-/// let mqtt_options = MqttOptions::new("server-01", "localhost", 1883);
-/// let (mqtt_client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
-///
-/// tokio::spawn(async move {
-///     loop { eventloop.poll().await.ok(); }
-/// });
-///
-/// let mut server = RpcServer::new(mqtt_client).await?;
-///
-/// server.handle("math/add", |req: Request| async move {
-///     Ok(Response { result: req.value + 10 })
-/// }).await?;
-///
-/// server.run().await?;
-/// # Ok(())
-/// # }
-/// ```
+/// Cheap to clone (internally `Arc`-backed).
+#[derive(Clone)]
 pub struct RpcServer {
     // ---
-    mqtt: AsyncClient,
-    handlers: Arc<RwLock<HashMap<String, BoxedHandler>>>,
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    // ---
+    transport: TransportPtr,
+    node_id: String,
+    handlers: Mutex<HandlerMap>,
 }
 
 impl RpcServer {
     // ---
-
-    /// Create a new RPC server
-    ///
-    /// # Arguments
-    ///
-    /// * `mqtt` - The MQTT async client to use for communication
-    pub async fn new(mqtt: AsyncClient) -> Result<Self> {
+    pub fn new(transport: TransportPtr, node_id: String) -> Self {
         // ---
-        Ok(Self {
-            mqtt,
-            handlers: Arc::new(RwLock::new(HashMap::new())),
-        })
-    }
-
-    /// Register an async handler for a topic
-    ///
-    /// # Arguments
-    ///
-    /// * `topic` - The base topic to handle (will subscribe to `{topic}/request`)
-    /// * `handler` - Async function that processes requests and returns responses
-    ///
-    /// # Handler Execution
-    ///
-    /// - Each request spawns a new task (concurrent execution)
-    /// - Handler is called with deserialized request
-    /// - Response is automatically serialized and published
-    /// - Correlation ID is preserved from request to response
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if subscription fails.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use mqtt_rpc_rs::RpcServer;
-    /// # use serde::{Serialize, Deserialize};
-    /// # #[derive(Deserialize)] struct Req { a: i32, b: i32 }
-    /// # #[derive(Serialize)] struct Resp { sum: i32 }
-    /// # async fn example(mut server: RpcServer) -> Result<(), mqtt_rpc_rs::Error> {
-    /// server.handle("math/add", |req: Req| async move {
-    ///     Ok(Resp { sum: req.a + req.b })
-    /// }).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn handle<F, Fut, Req, Resp>(&mut self, topic: &str, handler: F) -> Result<()>
-    where
-        F: Fn(Req) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = Result<Resp>> + Send + 'static,
-        Req: DeserializeOwned + Send + 'static,
-        Resp: Serialize + Send + 'static,
-    {
-        // ---
-        let request_topic = format!("{}/request", topic);
-
-        // Subscribe to request topic
-        self.mqtt
-            .subscribe(&request_topic, QoS::AtLeastOnce)
-            .await
-            .map_err(|e| Error::Mqtt(rumqttc::ClientError::from(e)));
-
-        // Store handler
-        let wrapped = wrap_handler(handler);
-        let mut handlers: tokio::sync::RwLockWriteGuard<HashMap<String, BoxedHandler>> =
-            self.handlers.write().await;
-        handlers.insert(topic.to_string(), wrapped);
-
-        Ok(())
-    }
-
-    /// Run the server event loop
-    ///
-    /// This method blocks and processes incoming MQTT messages.
-    /// For each request, it looks up the handler and spawns a task
-    /// to process the request concurrently.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if MQTT connection is lost.
-    pub async fn run(&mut self) -> Result<()> {
-        // ---
-        loop {
-            // This would need the eventloop to be passed in or managed differently
-            // For now, this is a placeholder showing the structure
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        Self {
+            inner: Arc::new(Inner {
+                transport,
+                node_id,
+                handlers: Mutex::new(HashMap::new()),
+            }),
         }
     }
 
-    /// Handle an incoming request message
+    /// Register a typed async handler for a method.
     ///
-    /// Extracts the topic, correlation ID, and response topic from JSON payload,
-    /// then spawns a task to execute the handler.
-    pub(crate) async fn handle_request(&self, publish: Publish) -> Result<()> {
+    /// The handler receives the decoded request payload type and returns a response
+    /// payload type. The server wraps these into the crate’s request/response
+    /// envelope format (including correlation).
+    pub fn register<F, Fut, Req, Resp>(&self, method: &str, handler: F)
+    where
+        F: Fn(Req) -> Fut + Send + Sync + Clone + 'static,
+        Fut: std::future::Future<Output = Result<Resp>> + Send + 'static,
+        Req: serde::de::DeserializeOwned + Send + 'static,
+        Resp: serde::Serialize + Send + 'static,
+    {
         // ---
-        // Extract topic (remove /request suffix)
-        let full_topic = &publish.topic;
-        let topic = full_topic
-            .strip_suffix("/request")
-            .ok_or_else(|| Error::HandlerNotFound(full_topic.clone()))?;
+        let mut handlers = lock_ignore_poison(&self.inner.handlers);
+        handlers.insert(method.to_string(), wrap_handler(handler));
+    }
 
-        // Parse request to extract correlation_id and response_topic
-        let request_json: serde_json::Value = serde_json::from_slice(&publish.payload)?;
+    pub(crate) fn node_id(&self) -> &str {
+        &self.inner.node_id
+    }
 
-        let correlation_id_str = request_json
-            .get("correlation_id")
-            .and_then(|v| v.as_str())
-            .ok_or(Error::InvalidResponse)?;
-        let correlation_id = CorrelationId::from(correlation_id_str.to_string());
+    fn request_prefix(&self) -> String {
+        // ---
+        format!("requests/{}/", self.node_id())
+    }
 
-        let response_topic = request_json
-            .get("response_topic")
-            .and_then(|v| v.as_str())
-            .ok_or(Error::MissingResponseTopic)?
-            .to_string();
+    async fn dispatch_request(&self, method: &str, bytes: Bytes) -> Result<Bytes> {
+        // ---
+        let handler = {
+            let handlers = lock_ignore_poison(&self.inner.handlers);
+            handlers.get(method).cloned()
+        };
 
-        // Look up handler
-        let handlers: tokio::sync::RwLockReadGuard<HashMap<String, BoxedHandler>> =
-            self.handlers.read().await;
-        let handler = handlers
-            .get(topic)
-            .ok_or_else(|| Error::HandlerNotFound(topic.to_string()))?
-            .clone();
-        drop(handlers); // Release lock before spawning
+        let handler = handler.ok_or_else(|| Error::HandlerNotFound(method.to_string()))?;
 
-        // Clone what we need for the spawned task
-        let mqtt = self.mqtt.clone();
-        let request_bytes = publish.payload.clone();
+        // Return response payload or an error
+        handler(bytes).await
+    }
 
-        // Spawn handler task
-        tokio::spawn(async move {
-            // Execute handler
-            let response_result = handler(request_bytes).await;
+    async fn publish_response(
+        &self,
+        response_topic: String,
+        response_bytes: Bytes,
+        correlation_id: Arc<str>,
+    ) -> Result<()> {
+        // ---
+        let env = Envelope::response(
+            Address::from(response_topic),
+            response_bytes,
+            correlation_id,
+            Arc::<str>::from("application/json"),
+        );
 
-            // Build response
-            match response_result {
-                Ok(response_payload) => {
-                    // Wrap with correlation_id
-                    let response = RpcResponse::new(correlation_id, response_payload);
+        self.inner
+            .transport
+            .publish(
+                env,
+                PublishOptions {
+                    durable: false,
+                    ttl_ms: None,
+                },
+            )
+            .await
+    }
+}
 
-                    if let Ok(response_json) = serde_json::to_vec(&response) {
-                        // Publish response
-                        let _ = mqtt
-                            .publish(response_topic, QoS::AtLeastOnce, false, response_json)
-                            .await;
-                    }
-                }
-                Err(_e) => {
-                    // TODO: Send error response
-                }
-            }
-        });
+#[async_trait::async_trait]
+impl TransportConsumer for RpcServer {
+    // ---
 
-        Ok(())
+    fn subscription(&self) -> Subscription {
+        // ---
+        // We want to receive requests for any method under:
+        //   requests/<node_id>/<method>
+        //
+        // The in-memory transport defines reference semantics. Other transports
+        // should approximate this behavior as closely as possible.
+        Subscription::from(format!("requests/{}", self.node_id()))
+    }
+
+    async fn handle_envelope(&self, env: Envelope) -> Result<()> {
+        // ---
+        let method = env.method.as_deref().ok_or(Error::InvalidRequest)?;
+
+        let reply_to = env.reply_to.ok_or(Error::MissingResponseTopic)?;
+
+        let correlation_id = env.correlation_id.clone();
+
+        let response_payload = self.dispatch_request(method, env.payload).await?;
+
+        let response = Envelope {
+            // ---
+            address: reply_to,
+            method: None,
+            payload: response_payload,
+            correlation_id,
+            reply_to: None,
+            content_type: None,
+        };
+
+        let pub_opts = PublishOptions {
+            durable: false,
+            ttl_ms: None,
+        };
+        self.inner.transport.publish(response, pub_opts).await
     }
 }

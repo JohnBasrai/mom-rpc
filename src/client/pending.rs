@@ -57,6 +57,7 @@ impl PendingRequests {
     }
 
     /// Get the number of pending requests
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         // ---
         self.requests.len()
