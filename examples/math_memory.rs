@@ -1,4 +1,4 @@
-use mqtt_rpc_rs::{create_transport, RpcClient, RpcServer};
+use mom_rpc::{create_transport, RpcClient, RpcServer};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

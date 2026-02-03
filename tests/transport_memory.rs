@@ -3,7 +3,7 @@
 use bytes::Bytes;
 use tokio::time::{timeout, Duration};
 
-use mqtt_rpc_rs::{
+use mom_rpc::{
     // ---
     Address,
     CorrelationId,
@@ -17,7 +17,7 @@ async fn memory_subscribe_then_publish_delivers() {
     // ---
     // Arrange
     // ---
-    let transport = mqtt_rpc_rs::create_memory_transport("mstpd")
+    let transport = mom_rpc::create_memory_transport("mstpd")
         .await
         .expect("failed to create memory transport");
 

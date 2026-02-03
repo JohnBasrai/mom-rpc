@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 #[allow(unused_imports)]
 use crate::{
@@ -15,57 +14,55 @@ use crate::{
     TransportPtr,
 };
 
+use super::SubscriptionManager;
+
 /// Concrete Transport backed by mqtt-async-client.
 ///
 /// All MQTT-specific concerns (topics, client state, callbacks, etc.)
 /// are contained within this type.
 struct MqttAsyncClientTransport {
-    // Placeholder fields — will evolve as implementation fills in.
-    //
-    // For example:
-    // client: mqtt_async_client::Client,
-    // subscriptions: DashMap<Subscription, mpsc::Sender<Envelope>>,
+    // ---
     transport_id: String,
+    subscriptions: SubscriptionManager,
 }
 
 #[async_trait::async_trait]
 impl Transport for MqttAsyncClientTransport {
     // ---
-    fn transport_id(self) -> &str {
-        self.transport_id.as_str()
+    fn transport_id(&self) -> &str {
+        &self.transport_id
     }
 
     async fn publish(&self, env: Envelope, _opts: PublishOptions) -> Result<()> {
         // ---
-        #[cfg(feature = "logging")]
-        log::debug!("{}: publish to {:?}", self.transport_id(), subs);
-
-        // TODO:
+        // TODO: For MQTT implementation:
         // - map Address -> MQTT topic
-        // - serialize Envelope payload
-        // - publish via client
+        // - serialize Envelope metadata into MQTT properties
+        // - publish via MQTT client
         //
-        // For now, stub.
-        let _ = env;
+        // For now, simulate fanout using subscription manager.
+        // This allows testing the RPC layer even without MQTT.
+        self.subscriptions.fanout(&env, &self.transport_id).await;
+
         Ok(())
     }
 
     async fn subscribe(
         &self,
-        _sub: Subscription,
+        sub: Subscription,
         _opts: SubscribeOptions,
     ) -> Result<SubscriptionHandle> {
         // ---
         #[cfg(feature = "logging")]
         log::debug!("{}: subscribe to {:?}", self.transport_id(), sub);
 
-        // TODO:
+        // TODO: For MQTT implementation:
         // - map Subscription -> MQTT topic filter
-        // - register callback / stream
-        // - forward messages into inbox channel
+        // - subscribe via MQTT client
+        // - forward incoming MQTT messages to subscription manager
         //
-        // For now, return an empty channel.
-        let (_tx, rx) = mpsc::channel(16);
+        // For now, use subscription manager directly.
+        let rx = self.subscriptions.add(sub).await;
 
         Ok(SubscriptionHandle { inbox: rx })
     }
@@ -74,7 +71,14 @@ impl Transport for MqttAsyncClientTransport {
         // ---
         #[cfg(feature = "logging")]
         log::debug!("{}: closing transport...", self.transport_id());
-        // TODO: graceful shutdown
+
+        // TODO: For MQTT implementation:
+        // - gracefully disconnect MQTT client
+        // - wait for pending publishes/acks
+        //
+        // For now, just clear subscriptions.
+        self.subscriptions.clear().await;
+
         Ok(())
     }
 }
@@ -82,18 +86,21 @@ impl Transport for MqttAsyncClientTransport {
 /// Create an MQTT-based transport using mqtt-async-client.
 ///
 /// This is the ONLY symbol exposed from this module.
-pub async fn create_transport(id: &str /* more opts later */) -> Result<TransportPtr> {
+pub async fn create_transport(transport_id: &str) -> Result<TransportPtr> {
     // ---
     // TODO:
-    // - build mqtt-async-client options
-    // - connect client
-    // - set up background receive loop if needed
+    // - build mqtt-async-client options from config
+    // - connect MQTT client
+    // - set up background receive loop for incoming messages
+    // - wire MQTT messages into subscription manager
+    //
     #[cfg(feature = "logging")]
-    log::debug!("{transport_id}: create mqtt_async_client transport");
+    log::debug!("{}: create mqtt_async_client transport", transport_id);
 
     let transport = MqttAsyncClientTransport {
-        // init fields
-        transport_id,
+        // ---
+        transport_id: transport_id.to_owned(),
+        subscriptions: SubscriptionManager::new(),
     };
 
     Ok(Arc::new(transport))

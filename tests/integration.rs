@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
-use mqtt_rpc_rs::{
+use mom_rpc::{
     //
     create_transport,
     Result,

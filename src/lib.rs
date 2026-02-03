@@ -47,11 +47,17 @@ pub async fn create_transport(transport_id: &str) -> Result<TransportPtr> {
     // ---
     #[cfg(feature = "transport-mqtt-async-client")]
     {
-        return create_mqtt_async_client_transport(transport_id).await;
+        create_mqtt_async_client_transport(transport_id).await
     }
 
     // Future transport impls go here
 
-    // Fallback / default
-    create_memory_transport(transport_id).await
+    #[cfg(all(
+        not(feature = "transport-mqtt-async-client"),
+        //not(feature = "transport-rabbitmq")
+    ))]
+    {
+        // Fallback / default
+        create_memory_transport(transport_id).await
+    }
 }

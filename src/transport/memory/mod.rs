@@ -28,4 +28,5 @@
 
 mod transport;
 
+use super::SubscriptionManager;
 pub use transport::create_transport;

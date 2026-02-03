@@ -1,4 +1,4 @@
-# Contributing to mqtt-rpc-rs
+# Contributing to mom-rpc
 
 Thanks for considering contributing!
 
@@ -68,7 +68,7 @@ mod client {
 // Struct definitions
 pub struct RpcClient {
     // ---
-    mqtt: AsyncClient,
+    mom_rpc: AsyncClient,
     pending: Arc<Mutex<HashMap<CorrelationId, Sender>>>,
 }
 
@@ -198,7 +198,7 @@ This project uses the [Explicit Module Boundary Pattern (EMBP)](https://github.c
 - External modules import through `crate::module::`
 - Never bypass module gateways with deep imports
 
-### mqtt-rpc-rs Module Structure
+### mom-rpc Module Structure
 
 ```
 src/
