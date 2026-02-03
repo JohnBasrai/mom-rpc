@@ -256,7 +256,7 @@ It provides a **clean RPC abstraction over imperfect transports**, not a perfect
 
 Potential future extensions include:
 
-* **MQTT transport implementation** using `mqtt-async-client` (stubbed but not yet functional)
+* **Transport implementation** using `mqtt-async-client` (stubbed but not yet functional)
 * Additional transport implementations (RabbitMQ, NATS, etc.)
 * Optional response caching for idempotent requests
 * Pluggable retry / timeout policies

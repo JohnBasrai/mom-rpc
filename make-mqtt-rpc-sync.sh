@@ -4,7 +4,7 @@
 # .github \
 
 
-tar cfvz make-mqtt-rpc-sync.tar.gz \
+tar cfvz make-mom-rpc-sync.tar.gz \
     .gitignore \
     CONTRIBUTING.md \
     Cargo.lock \

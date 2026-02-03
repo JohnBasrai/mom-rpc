@@ -8,7 +8,7 @@
 //!
 //! Requires: a broker to be running
 
-use mqtt_rpc_rs::{create_transport, RpcClient};
+use mom_rpc::{create_transport, RpcClient};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

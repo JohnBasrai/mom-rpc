@@ -1,12 +1,12 @@
 [package]
-name = "mqtt-rpc-rs"
+name = "mom-rpc"
 version = "0.2.0"
 edition = "2021"
 authors = ["John Basrai"]
 description = "RPC semantics over MQTT pub/sub with request/response correlation"
 license = "MIT"
-repository = "https://github.com/JohnBasrai/mqtt-rpc-rs"
-keywords = ["mqtt", "rpc", "iot", "async", "messaging"]
+repository = "https://github.com/JohnBasrai/mom-rpc"
+keywords = ["middleware", "pubsub", "rpc", "iot", "async", "messaging"]
 categories = ["network-programming", "asynchronous"]
 
 [dependencies]

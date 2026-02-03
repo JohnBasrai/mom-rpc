@@ -1,4 +1,4 @@
-# mqtt-rpc-rs
+# mom-rpc
 
 **Transport-agnostic async RPC over message-oriented middleware.**
 
@@ -72,7 +72,7 @@ All transports conform to the same RPC contract.
 ### Server
 
 ```rust
-use mqtt_rpc_rs::{RpcServer, Result};
+use mom_rpc::{RpcServer, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
 ### Client
 
 ```rust
-use mqtt_rpc_rs::{RpcClient, Result};
+use mpm_rpc::{RpcClient, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
