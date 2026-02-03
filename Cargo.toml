@@ -1,6 +1,6 @@
 [package]
 name = "mqtt-rpc-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["John Basrai"]
 description = "RPC semantics over MQTT pub/sub with request/response correlation"
@@ -10,17 +10,20 @@ keywords = ["mqtt", "rpc", "iot", "async", "messaging"]
 categories = ["network-programming", "asynchronous"]
 
 [dependencies]
-log = { version = "0.4", optional = true }
+anyhow = "1.0"
+async-trait = "0.1"
 bytes = "1"
-rumqttc = "0.25"
+log = { version = "0.4", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
+url = "2"
 uuid = { version = "1.11", features = ["v4", "serde"] }
 
-
 [dev-dependencies]
+env_logger = "0.11"
+futures = "0.3.31"
 tokio-test = "0.4"
 
 [[example]]
@@ -33,5 +36,6 @@ path = "examples/math_client.rs"
 
 
 [features]
-default = []
+default = ["logging"]
 logging = ["log"]
+transport-mqtt-async-client = []

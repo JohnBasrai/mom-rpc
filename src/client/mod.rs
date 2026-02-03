@@ -1,257 +1,252 @@
-/// RPC client for sending requests and awaiting responses
-mod pending;
+// src/client/mod.rs
 
-use crate::error::{Error, Result};
-use crate::protocol::{CorrelationId, RpcRequest, RpcResponse};
+//! RPC client implementation.
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard};
+
 use bytes::Bytes;
-use pending::PendingRequests;
-use rumqttc::{AsyncClient, Publish, QoS};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Mutex;
+use serde_json::Value;
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
-/// RPC client for sending requests over MQTT
-///
-/// Creates a client that can send requests to MQTT topics and await responses.
-/// Multiple requests can be in-flight concurrently, each identified by a unique
-/// correlation ID.
-///
-/// # Example
-///
-/// ```no_run
-/// use mqtt_rpc_rs::RpcClient;
-/// use rumqttc::{MqttOptions, AsyncClient};
-/// use std::time::Duration;
-/// use serde::{Serialize, Deserialize};
-///
-/// #[derive(Serialize)]
-/// struct Request { value: i32 }
-///
-/// #[derive(Deserialize)]
-/// struct Response { result: i32 }
-///
-/// # async fn example() -> Result<(), mqtt_rpc_rs::Error> {
-/// let mqtt_options = MqttOptions::new("client-01", "localhost", 1883);
-/// let (mqtt_client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
-///
-/// tokio::spawn(async move {
-///     loop { eventloop.poll().await.ok(); }
-/// });
-///
-/// let rpc_client = RpcClient::new(mqtt_client, "client-01").await?;
-///
-/// let response: Response = rpc_client
-///     .request("math/add", &Request { value: 5 })
-///     .timeout(Duration::from_secs(5))
-///     .await?;
-/// # Ok(())
-/// # }
-/// ```
-pub struct RpcClient {
+use crate::{
     // ---
-    mqtt: AsyncClient,
-    client_id: String,
-    pending: Arc<Mutex<PendingRequests>>,
+    Address,
+    Envelope,
+    Error,
+    PublishOptions,
+    Result,
+    SubscribeOptions,
+    Subscription,
+    TransportPtr,
+};
+
+use super::CorrelationId;
+
+/// Acquire a mutex guard, intentionally ignoring poisoning.
+///
+/// Mutex poisoning indicates that another task panicked while holding the lock.
+/// The protected state here is a best-effort pending-response map
+/// (correlation_id → oneshot sender).
+///
+/// Ignoring poisoning is acceptable because:
+/// - There are no invariants spanning multiple fields.
+/// - The worst outcome is a dropped or unmatched response.
+/// - Connection-level failures are handled by the transport receive loop.
+///
+/// This avoids propagating non-`Send` poison errors across async boundaries.
+fn lock_ignore_poison<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    // ---
+    match m.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// Running RPC client instance.
+///
+/// Cheap to clone (internally `Arc`-backed).
+#[derive(Clone)]
+pub struct RpcClient {
+    inner: Arc<Inner>,
+}
+
+type PendingMap = HashMap<String, oneshot::Sender<Bytes>>;
+
+struct Inner {
+    // ---
+    transport: TransportPtr,
+    node_id: String,
+    pending: Mutex<PendingMap>,
+
+    /// Best-effort receive loop handle.
+    ///
+    /// We keep it so the task isn't immediately dropped, and so it can be
+    /// extended later (shutdown, join-on-close, etc.).
+    _rx_task: JoinHandle<()>,
 }
 
 impl RpcClient {
     // ---
-
-    /// Create a new RPC client
+    /// Create a client with an explicitly provided transport.
     ///
-    /// # Arguments
-    ///
-    /// * `mqtt` - The MQTT async client to use for communication
-    /// * `client_id` - Unique identifier for this client (used for response topic)
-    ///
-    /// # Behavior
-    ///
-    /// - Subscribes to response topic: `responses/{client_id}`
-    /// - Spawns background task to handle incoming responses
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if subscription fails.
-    pub async fn new(mqtt: AsyncClient, client_id: impl Into<String>) -> Result<Self> {
+    /// This is the constructor you want for tests and for advanced users.
+    pub async fn with_transport(transport: TransportPtr, node_id: String) -> Result<Self> {
         // ---
-        let client_id = client_id.into();
-        let response_topic = format!("responses/{}", client_id);
+        // Subscribe to responses for this node.
+        //
+        // NOTE: memory transport is exact-match, so do NOT use MQTT-style wildcards here.
+        // Other transports may choose to interpret subscription strings differently,
+        // but they should approximate memory semantics where possible.
+        let response_sub: Subscription = Subscription::from(format!("responses/{node_id}"));
 
-        // Subscribe to response topic
-        mqtt.subscribe(&response_topic, QoS::AtLeastOnce)
-            .await
-            .map_err(|e| e);
+        let mut handle = transport
+            .subscribe(response_sub, SubscribeOptions { durable: false })
+            .await?;
 
-        let pending = Arc::new(Mutex::new(PendingRequests::new()));
+        // We need a partially built client to call handle_response().
+        let pending: Mutex<PendingMap> = Mutex::new(PendingMap::new());
 
-        Ok(Self {
-            mqtt,
-            client_id,
-            pending,
-        })
+        // We'll create the Arc<Inner> after we spawn the receive loop.
+        // The loop needs a clone of RpcClient (cheap).
+        let transport_for_inner = transport.clone();
+        let node_id_for_inner = node_id.clone();
+
+        // Temporary inner without task; we’ll replace _rx_task after spawn.
+        // (We build the Arc first so the rx task can call back into client.)
+        let inner = Arc::new_cyclic(|weak| {
+            // ---
+            let weak = weak.clone();
+
+            // Spawn receive loop.
+            let rx_task = tokio::spawn(async move {
+                // ---
+                loop {
+                    match handle.inbox.recv().await {
+                        Some(env) => {
+                            if let Some(inner) = weak.upgrade() {
+                                let client = RpcClient { inner };
+                                if let Err(_err) = client.handle_envelope(env) {
+                                    #[cfg(feature = "logging")]
+                                    log::warn!("client response handling error: {_err}");
+                                }
+                            } else {
+                                // Inner was dropped, exit loop
+                                break;
+                            }
+                        }
+                        None => {
+                            // Transport closed or subscription dropped.
+                            #[cfg(feature = "logging")]
+                            log::debug!("transport closed or subscription dropped");
+                            break;
+                        }
+                    }
+                }
+            });
+
+            Inner {
+                // ---
+                transport: transport_for_inner,
+                node_id: node_id_for_inner,
+                pending,
+                _rx_task: rx_task,
+            }
+        });
+
+        Ok(Self { inner })
     }
 
-    /// Send an RPC request and return a future that resolves when the response arrives
+    /// Convenience constructor that selects the crate-default transport.
     ///
-    /// # Arguments
-    ///
-    /// * `topic` - The base topic for the request (will publish to `{topic}/request`)
-    /// * `payload` - The request payload to serialize
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the deserialized response or an error.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Serialization fails
-    /// - MQTT publish fails
-    /// - Response doesn't arrive (use `request_timeout` for timeout handling)
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use mqtt_rpc_rs::RpcClient;
-    /// # use serde::{Serialize, Deserialize};
-    /// # #[derive(Serialize)] struct Req { value: i32 }
-    /// # #[derive(Deserialize)] struct Resp { result: i32 }
-    /// # async fn example(client: RpcClient) -> Result<(), mqtt_rpc_rs::Error> {
-    /// let response: Resp = client
-    ///     .request("math/add", &Req { value: 5 })
-    ///     .await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn request<Req, Resp>(&self, topic: &str, payload: &Req) -> Result<Resp>
-    where
-        Req: Serialize,
-        Resp: DeserializeOwned,
-    {
+    /// This calls `crate::create_transport()` (feature-driven) and then
+    /// constructs the client using `with_transport()`.
+    pub async fn new(node_id: String) -> Result<Self> {
         // ---
-        self.request_timeout(topic, payload, None).await
+        let transport = crate::create_transport(&node_id).await?;
+        Self::with_transport(transport, node_id).await
     }
 
-    /// Send an RPC request with a timeout
+    /// Send an RPC request to a target service node.
     ///
-    /// # Arguments
-    ///
-    /// * `topic` - The base topic for the request (will publish to `{topic}/request`)
-    /// * `payload` - The request payload to serialize
-    /// * `timeout` - Optional timeout duration
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the deserialized response or an error.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Serialization fails
-    /// - MQTT publish fails
-    /// - Request times out
-    /// - Response deserialization fails
-    pub async fn request_timeout<Req, Resp>(
+    /// - `target_node_id`: service identity (e.g., `"math-service"`)
+    /// - `method`: RPC method name
+    /// - `req`: request payload
+    pub async fn request_to<TReq, TResp>(
         &self,
-        topic: &str,
-        payload: &Req,
-        timeout: Option<Duration>,
-    ) -> Result<Resp>
+        target_node_id: &str,
+        method: &str,
+        req: TReq,
+    ) -> Result<TResp>
     where
-        Req: Serialize,
-        Resp: DeserializeOwned,
+        TReq: Serialize,
+        TResp: DeserializeOwned,
     {
         // ---
         let correlation_id = CorrelationId::generate();
+        let correlation_id_str = correlation_id.to_string();
 
-        // Register pending request
-        let rx = {
-            let mut pending = self.pending.lock().await;
-            pending.register(correlation_id.clone())
-        };
+        let (tx, rx) = oneshot::channel();
 
-        // Send request
-        self.send_request(topic, payload, correlation_id.clone())
+        {
+            let mut pending = lock_ignore_poison(&self.inner.pending);
+            pending.insert(correlation_id_str.clone(), tx);
+        }
+
+        let request_addr = Address::from(format!("requests/{target_node_id}"));
+
+        let value: Value = serde_json::to_value(req)?;
+        let bytes = serde_json::to_vec(&value)?;
+
+        let env = Envelope::request(
+            request_addr,
+            method.into(),
+            Bytes::from(bytes),
+            Arc::from(correlation_id.to_string()),
+            Address::from(format!("responses/{}", self.inner.node_id)),
+            Arc::<str>::from("application/json"),
+        );
+
+        self.inner
+            .transport
+            .publish(
+                env,
+                PublishOptions {
+                    durable: false,
+                    ttl_ms: None,
+                },
+            )
             .await?;
 
-        // Wait for response with optional timeout
-        let response_bytes: Bytes = if let Some(duration) = timeout {
-            match tokio::time::timeout(duration, rx).await {
-                Ok(Ok(bytes)) => bytes,
-                Ok(Err(_)) => {
-                    // Receiver dropped (shouldn't happen)
-                    let mut pending = self.pending.lock().await;
-                    pending.remove(&correlation_id);
-                    return Err(Error::ConnectionLost);
-                }
-                Err(_) => {
-                    // Timeout
-                    let mut pending = self.pending.lock().await;
-                    pending.remove(&correlation_id);
-                    return Err(Error::Timeout);
-                }
-            }
-        } else {
-            match rx.await {
-                Ok(bytes) => bytes,
-                Err(_) => return Err(Error::ConnectionLost),
-            }
-        };
-
-        // Deserialize response
-        let response: RpcResponse<Resp> = serde_json::from_slice(&response_bytes)?;
-        Ok(response.payload)
+        let response = rx.await.map_err(|_err| {
+            #[cfg(feature = "logging")]
+            log::warn!(
+                "response channel closed (server dropped or transport shutdown:{:?})",
+                _err
+            );
+            Error::Transport
+        })?;
+        let resp: TResp = serde_json::from_slice(&response)?;
+        Ok(resp)
     }
 
-    /// Handle an incoming MQTT message
-    ///
-    /// Extracts correlation ID and delivers response to waiting Future.
-    #[allow(dead_code)]
-    pub(crate) async fn handle_message(&self, publish: Publish) {
+    /// Internal hook used by the transport receive loop to dispatch responses.
+    pub(crate) fn handle_response(&self, correlation_id: Arc<str>, payload: Bytes) -> Result<()> {
         // ---
-        // Parse response to extract correlation_id
-        let response_result: Result<serde_json::Value> =
-            serde_json::from_slice(&publish.payload).map_err(Error::from);
+        let key: &str = &correlation_id;
 
-        if let Ok(response_json) = response_result {
-            if let Some(correlation_id_str) =
-                response_json.get("correlation_id").and_then(|v| v.as_str())
-            {
-                let correlation_id = CorrelationId::from(correlation_id_str.to_string());
-                let mut pending = self.pending.lock().await;
-                pending.complete(&correlation_id, publish.payload.clone());
-            }
+        let tx = {
+            let mut pending = lock_ignore_poison(&self.inner.pending);
+            pending.remove(key)
+        };
+
+        if let Some(tx) = tx {
+            // If the receiver is gone, that's fine; request_to will time out / drop.
+            let _ = tx.send(payload);
         }
-    }
-
-    /// Internal method to send a request
-    async fn send_request<Req>(
-        &self,
-        topic: &str,
-        payload: &Req,
-        correlation_id: CorrelationId,
-    ) -> Result<()>
-    where
-        Req: Serialize,
-    {
-        // ---
-        let response_topic = format!("responses/{}", self.client_id);
-        let request = RpcRequest {
-            correlation_id,
-            response_topic,
-            payload,
-        };
-        let payload_json = serde_json::to_vec(&request)?;
-
-        let request_topic = format!("{}/request", topic);
-
-        self.mqtt
-            .publish(request_topic, QoS::AtLeastOnce, false, payload_json)
-            .await
-            .map_err(|e| e);
 
         Ok(())
+    }
+
+    pub(crate) fn node_id(&self) -> &str {
+        &self.inner.node_id
+    }
+
+    fn handle_envelope(&self, env: Envelope) -> Result<()> {
+        // ---
+        // We only care about responses addressed to our response address.
+        // (Subscription should already constrain this for memory transport.)
+        let expected_addr = format!("responses/{}", self.node_id());
+
+        if *env.address.0 != expected_addr {
+            return Ok(());
+        }
+
+        let correlation_id = env.correlation_id.ok_or(Error::InvalidResponse)?;
+
+        self.handle_response(correlation_id, env.payload)
     }
 }
