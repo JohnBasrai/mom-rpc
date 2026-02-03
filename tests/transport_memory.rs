@@ -9,6 +9,7 @@ use mom_rpc::{
     CorrelationId,
     Envelope,
     PublishOptions,
+    RpcConfig,
     SubscribeOptions,
 };
 
@@ -17,7 +18,9 @@ async fn memory_subscribe_then_publish_delivers() {
     // ---
     // Arrange
     // ---
-    let transport = mom_rpc::create_memory_transport("mstpd")
+    let config = RpcConfig::memory("mstpd");
+
+    let transport = mom_rpc::create_memory_transport(&config)
         .await
         .expect("failed to create memory transport");
 

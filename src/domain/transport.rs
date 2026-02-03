@@ -15,6 +15,7 @@
 //!
 //! Concrete implementations of this interface live under `src/transport/`.
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -31,7 +32,7 @@ use tokio::sync::mpsc;
 ///
 /// The domain layer makes no assumptions about address syntax, hierarchy,
 /// or wildcard behavior.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Address(pub Arc<str>);
 
 impl<T> From<T> for Address
@@ -83,7 +84,7 @@ where
 ///
 /// The transport layer does not interpret the payload or metadata fields;
 /// it is responsible only for delivery.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Envelope {
     // ---
     /// Delivery address used by the transport.

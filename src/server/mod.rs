@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use bytes::Bytes;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::SubscribeOptions;
@@ -58,6 +59,7 @@ struct Inner {
     transport: TransportPtr,
     node_id: String,
     handlers: Mutex<HandlerMap>,
+    shutdown_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 impl RpcServer {
@@ -69,11 +71,136 @@ impl RpcServer {
                 transport,
                 node_id,
                 handlers: Mutex::new(HashMap::new()),
+                shutdown_tx: Mutex::new(None),
             }),
         }
     }
 
-    pub async fn run(&self) -> Result<JoinHandle<Result<()>>> {
+    /// Run server, blocking current task until shutdown() is called.
+    ///
+    /// This method subscribes to incoming requests and processes them in a loop
+    /// until `shutdown()` is called from another task or the transport closes.
+    ///
+    /// **Important:** This method blocks the current task. Use this in your main
+    /// application loop. For tests or background usage, use `spawn()` instead.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use mom_rpc::{RpcServer, RpcConfig, create_memory_transport};
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let config = RpcConfig::memory("server");
+    /// let transport = create_memory_transport(&config).await?;
+    /// let server = RpcServer::new(transport.clone(), "my-service".to_owned());
+    ///
+    /// // Setup signal handling
+    /// let server_clone = server.clone();
+    /// tokio::spawn(async move {
+    ///     tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl+C");
+    ///     server_clone.shutdown().await.expect("shutdown failed");
+    /// });
+    ///
+    /// // Blocks until shutdown() is called
+    /// server.run().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn run(&self) -> Result<()> {
+        // ---
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+        // Store shutdown sender for shutdown() to use
+        {
+            let mut tx = lock_ignore_poison(&self.inner.shutdown_tx);
+            *tx = Some(shutdown_tx);
+        }
+
+        self.run_with_shutdown(shutdown_rx).await
+    }
+
+    /// Spawn server in background, returning a JoinHandle.
+    ///
+    /// This is an alternative to `run()` for when you need the server running
+    /// in the background while doing other work in the main task.
+    ///
+    /// **Use cases:**
+    /// - Tests that need both server and client in the same task
+    /// - Applications that need to do other work while server runs
+    /// - When you want manual control over the server task
+    ///
+    /// **Important:** Use either `run()` OR `spawn()`, not both.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use mom_rpc::{RpcServer, RpcConfig, create_memory_transport};
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let config = RpcConfig::memory("server");
+    /// let transport = create_memory_transport(&config).await?;
+    /// let server = RpcServer::new(transport.clone(), "my-service".to_owned());
+    ///
+    /// // Spawn server in background
+    /// let handle = server.spawn();
+    ///
+    /// // ... do other work (e.g., create client, send requests) ...
+    ///
+    /// // Clean shutdown
+    /// server.shutdown().await?;
+    /// handle.await??;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn spawn(&self) -> JoinHandle<Result<()>> {
+        // ---
+        let server = self.clone();
+        tokio::spawn(async move { server.run().await })
+    }
+
+    /// Trigger graceful shutdown of the server.
+    ///
+    /// Sends a shutdown signal to `run()`, causing it to exit its loop.
+    /// This does not wait for the server to actually stop - use the JoinHandle
+    /// from `spawn()` or rely on `run()` returning if you need synchronization.
+    ///
+    /// **Important:** When using `spawn()`, always call `shutdown()` BEFORE
+    /// closing the transport. Closing the transport first will leave the server
+    /// task hanging.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use mom_rpc::{RpcServer, RpcConfig, create_memory_transport};
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let config = RpcConfig::memory("server");
+    /// let transport = create_memory_transport(&config).await?;
+    /// let server = RpcServer::new(transport.clone(), "my-service".to_owned());
+    ///
+    /// let handle = server.spawn();
+    ///
+    /// // ... do work ...
+    ///
+    /// // CORRECT shutdown order:
+    /// server.shutdown().await?;   // 1. Signal server to stop
+    /// transport.close().await?;   // 2. Close transport resources
+    /// handle.await??;             // 3. Wait for task completion
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn shutdown(&self) -> Result<()> {
+        // ---
+        let tx = {
+            let mut tx_opt = lock_ignore_poison(&self.inner.shutdown_tx);
+            tx_opt.take()
+        };
+
+        if let Some(tx) = tx {
+            let _ = tx.send(());
+        }
+
+        Ok(())
+    }
+
+    async fn run_with_shutdown(&self, mut shutdown_rx: oneshot::Receiver<()>) -> Result<()> {
         // ---
         let sub = Subscription::from(format!("requests/{}", self.node_id()));
 
@@ -83,28 +210,32 @@ impl RpcServer {
             .subscribe(sub, SubscribeOptions { durable: false })
             .await?;
 
-        let server = self.clone();
-
-        let join = tokio::spawn(async move {
-            loop {
-                match handle.inbox.recv().await {
-                    Some(env) => {
-                        if let Err(_err) = server.handle_envelope(env).await {
+        loop {
+            tokio::select! {
+                msg = handle.inbox.recv() => {
+                    match msg {
+                        Some(env) => {
+                            if let Err(_err) = self.handle_envelope(env).await {
+                                #[cfg(feature = "logging")]
+                                log::warn!("server request handling error: {_err}");
+                            }
+                        }
+                        None => {
                             #[cfg(feature = "logging")]
-                            log::warn!("server request handling error: {_err}");
+                            log::debug!("transport closed or subscription dropped");
+                            break;
                         }
                     }
-                    None => {
-                        #[cfg(feature = "logging")]
-                        log::debug!("transport closed or subscription dropped");
-                        break;
-                    }
+                }
+                _ = &mut shutdown_rx => {
+                    #[cfg(feature = "logging")]
+                    log::debug!("shutdown signal received");
+                    break;
                 }
             }
-            Ok(())
-        });
+        }
 
-        Ok(join)
+        Ok(())
     }
 
     /// Register a typed async handler for a method.

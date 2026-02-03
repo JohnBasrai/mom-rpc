@@ -8,7 +8,7 @@
 //!
 //! Requires: a broker to be running
 
-use mom_rpc::{create_transport, RpcServer};
+use mom_rpc::{create_transport, RpcConfig, RpcServer};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,8 +25,9 @@ struct AddResponse {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ---
-    // Transport will eventually be MQTT / Rabbit / etc.
-    let transport = create_transport("broker").await?;
+    let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-server");
+
+    let transport = create_transport(&config).await?;
 
     let server = RpcServer::new(transport.clone(), "math".to_owned());
 
@@ -34,14 +35,22 @@ async fn main() -> anyhow::Result<()> {
         Ok(AddResponse { sum: req.a + req.b })
     });
 
-    // Run until externally terminated
-    let handle = server.run().await?;
+    // Setup signal handling for graceful shutdown
+    let server_clone = server.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to listen for Ctrl+C");
+        println!("math_server: Received Ctrl+C, shutting down...");
+        server_clone.shutdown().await.expect("shutdown failed");
+    });
 
-    // Block forever (or until signal handling is added later)
-    futures::future::pending::<()>().await;
+    // Run server - blocks until shutdown() is called
+    // For Docker/production, also handle SIGTERM:
+    // tokio::signal::unix::signal(SignalKind::terminate())
+    server.run().await?;
 
     transport.close().await?;
-    handle.await??;
 
     Ok(())
 }

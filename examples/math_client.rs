@@ -8,7 +8,7 @@
 //!
 //! Requires: a broker to be running
 
-use mom_rpc::{create_transport, RpcClient};
+use mom_rpc::{create_transport, RpcClient, RpcConfig};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,8 +25,9 @@ struct AddResponse {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ---
-    // Transport will eventually be MQTT / Rabbit / etc.
-    let transport = create_transport("broker").await?;
+    let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-client");
+
+    let transport = create_transport(&config).await?;
 
     let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
 

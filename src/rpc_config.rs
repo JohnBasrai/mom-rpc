@@ -12,22 +12,35 @@ pub struct RpcConfig {
     /// Keep-alive interval in seconds.
     ///
     /// If `None`, a sensible transport default is used.
-    pub keep_alive_secs: Option<u64>,
+    pub keep_alive_secs: Option<u16>,
+
+    /// The transport_id used by the transport end point.
+    pub transport_id: String,
 }
 
 impl RpcConfig {
     /// Create a new `RpcConfig` with the given broker address.
     ///
     /// Keep-alive will use the transport default.
-    pub fn new(broker_addr: impl Into<String>) -> Self {
+    pub fn with_broker(broker_addr: impl Into<String>, transport_id: impl Into<String>) -> Self {
         Self {
             broker_addr: broker_addr.into(),
             keep_alive_secs: None,
+            transport_id: transport_id.into(),
+        }
+    }
+
+    /// Create a memory transport config (no broker).
+    pub fn memory(transport_id: impl Into<String>) -> Self {
+        Self {
+            broker_addr: String::new(),
+            keep_alive_secs: None,
+            transport_id: transport_id.into(),
         }
     }
 
     /// Set an explicit keep-alive interval.
-    pub fn with_keep_alive_secs(mut self, secs: u64) -> Self {
+    pub fn with_keep_alive_secs(mut self, secs: u16) -> Self {
         self.keep_alive_secs = Some(secs);
         self
     }
