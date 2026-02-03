@@ -48,14 +48,22 @@ This crate solves that by providing:
 
 ## Transports
 
-The crate includes a **memory transport** by default, which:
+The crate includes a **memory transport** by default.
+
+The memory transport:
 
 * requires no broker
 * is always enabled
 * is used for integration testing
-* defines the reference semantics for other transports
+* is **in-process only**
+* requires all participants to share the same transport instance
 
-Additional transports (e.g. MQTT) are implemented behind feature flags and conform to the same contract.
+It provides a deterministic loopback environment for testing and examples.
+It does **not** model an external broker.
+
+Broker-backed transports (e.g. MQTT, RabbitMQ) are implemented behind feature
+flags and run out-of-process, with shared state managed by the broker itself.
+All transports conform to the same RPC contract.
 
 ---
 
@@ -74,7 +82,7 @@ async fn main() -> Result<()> {
         Ok(a + b)
     });
 
-    server.start().await
+    server.run().await
 }
 ```
 

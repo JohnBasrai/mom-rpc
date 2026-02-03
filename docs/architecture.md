@@ -23,31 +23,31 @@ The architecture follows an **Explicit Module Boundary Pattern (EMBP)** througho
 ## Layering
 
 ```
-  ┌─────────────────────────────┐
-  │         User Code           │
-  │  (RpcClient / RpcServer)    │
-  └───────────────▲─────────────┘
-                  │
-  ┌───────────────┴─────────────┐
-  │         RPC Layer           │
-  │  - Correlation handling     │
-  │  - Method dispatch          │
-  │  - Pending request tracking │
-  └───────────────▲─────────────┘
-                  │
-  ┌───────────────┴─────────────┐
-  │      Transport Layer        │
-  │  - Publish / Subscribe      │
-  │  - Delivery semantics       │
-  │  - Addressing               │
-  └───────────────▲─────────────┘
-                  │
-  ┌───────────────┴─────────────┐
-  │     Concrete Transports     │
-  │  - memory                   │
-  │  - mqtt-async-client        │
-  │  - (future: rabbitmq, etc.) │
-  └─────────────────────────────┘
+   ┌─────────────────────────────┐
+   │         User Code           │
+   │  (RpcClient / RpcServer)    │
+   └───────────────▲─────────────┘
+                   │
+   ┌───────────────┴─────────────┐
+   │         RPC Layer           │
+   │  - Correlation handling     │
+   │  - Method dispatch          │
+   │  - Pending request tracking │
+   └───────────────▲─────────────┘
+                   │
+   ┌───────────────┴─────────────┐
+   │      Transport Layer        │
+   │  - Publish / Subscribe      │
+   │  - Delivery semantics       │
+   │  - Addressing               │
+   └───────────────▲─────────────┘
+                   │
+  ┌────────────────┴───────────────┐
+  │     Concrete Transports        │
+  │  - memory (implemented)        │
+  │  - mqtt-async-client (planned) │
+  │  - (future: rabbitmq, etc.)    │
+  └────────────────────────────────┘
 ```
 
 ---
@@ -60,7 +60,8 @@ The transport layer is defined by a small trait that supports:
 
 * Publishing an `Envelope`
 * Subscribing to an address
-* Delivering envelopes to a consumer via an async runner
+* Closing/releasing resources
+* Identifying itself via `transport_id()` for logging
 
 The transport layer **does not implement RPC semantics**. It is a generic message transport.
 
@@ -102,6 +103,9 @@ It:
 * Does not require a broker
 * Is always enabled by default
 * Is used heavily for integration testing
+* Accepts a `transport_id` parameter for debugging/logging
+
+**Important for testing:** Each call to `create_transport(transport_id)` creates an independent transport instance. To share state between client and server in tests, pass the same `TransportPtr` to both.
 
 ### Reference Semantics
 
@@ -132,18 +136,23 @@ Duplicate responses are tolerated; only the first wins.
 
 ---
 
-### Method Dispatch
+### Method Dispatch and Addressing
 
-RPC routing is based on a **logical method name**, carried inside the `Envelope.method` field.
+RPC routing uses a two-level scheme:
 
-* The transport address handles delivery
-* The method handles dispatch
+* **Transport address** routes to a specific node: `requests/{node_id}`
+* **Method field** (inside `Envelope`) selects the handler
+
+For example:
+* Client publishes to address `requests/math` 
+* Envelope contains `method: "add"`
+* Server at node `math` dispatches to the `add` handler
 
 This allows:
 
-* Multiple servers to share a transport address
-* Cleaner separation of routing vs semantics
-* Future support for method-based load splitting
+* Exact-match subscription semantics (compatible with memory transport reference implementation)
+* Clean separation between routing (transport address) and dispatch (method name)
+* Multiple methods served by a single server without subscription proliferation
 
 ---
 
@@ -159,9 +168,15 @@ The client API:
 The client:
 
 * Owns exactly one transport instance
-* Subscribes to a private response address
+* Subscribes to a private response address: `responses/{node_id}`
+* Spawns a receive loop during construction (automatically running when created)
 * Uses async/await for request handling
 * Does not require callbacks
+
+**Lifecycle:**
+* `RpcClient::new()` or `RpcClient::with_transport()` returns a ready-to-use client
+* The receive loop spawns automatically and runs until the transport closes
+* No explicit "start" method needed
 
 Timeouts and retries are intentionally out of scope for the initial release.
 
@@ -172,23 +187,40 @@ Timeouts and retries are intentionally out of scope for the initial release.
 The server:
 
 * Owns exactly one transport instance
-* Registers method handlers
-* Listens for incoming request envelopes
+* Registers typed method handlers
+* Subscribes to incoming request address: `requests/{node_id}`
 * Dispatches based on `Envelope.method`
 * Publishes responses using `reply_to` and `correlation_id`
 
 Handlers are type-erased internally but strongly typed at registration time.
 
+**Lifecycle:**
+1. Create server via `RpcServer::new(transport, node_id)`
+2. Register handlers via `register(method, handler)`
+3. Start processing via `run()` which returns a `JoinHandle`
+4. The receive loop runs until the transport closes
+
+The explicit `run()` method ensures handlers are registered before requests can be processed.
+
 ---
 
 ## Handler Model
 
+Handlers are async functions with typed request/response payloads:
+
+```rust
+server.register("add", |req: AddRequest| async move {
+    Ok(AddResponse { sum: req.a + req.b })
+});
+```
+
 Handlers:
 
-* Receive deserialized request payloads
-* Return serialized response payloads
-* Are async
+* Receive deserialized request payloads (type: `Req`)
+* Return `Result<Resp>` where `Resp` is the response type
+* Are async (return a `Future`)
 * Do not interact with the transport directly
+* Are automatically wrapped with serialization/deserialization logic
 
 Transport concerns (addresses, correlation, reply topics) are handled by the server runtime, not user handlers.
 
@@ -224,6 +256,7 @@ It provides a **clean RPC abstraction over imperfect transports**, not a perfect
 
 Potential future extensions include:
 
+* **MQTT transport implementation** using `mqtt-async-client` (stubbed but not yet functional)
 * Additional transport implementations (RabbitMQ, NATS, etc.)
 * Optional response caching for idempotent requests
 * Pluggable retry / timeout policies

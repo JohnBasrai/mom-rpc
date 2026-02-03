@@ -1,11 +1,40 @@
-### Changelog (what changed)
+# Changelog
 
-* **Public API no longer exposes `rumqttc`**: both `RpcServer` and `RpcClient` now start from `builder(node_id, RpcConfig)` and **own their internal event loop**.
-* Added **`RpcConfig`** (`broker_addr`, `keep_alive_secs`) and pushed all MQTT option building inside the crate.
-* Introduced a **generic `RpcBuilder<TKind>` + `RpcKind` specialization hook**, used by both server + client to share the “start transport + spawn event loop” lifecycle code.
-* Refactored **client to mirror server lifecycle**: `RpcClientBuilder::start().await -> RpcClient`, internal subscribe to `responses/{node_id}`, internal dispatch completing pending requests.
-* Updated **integration tests + math examples** to the new API (no manual eventloop spawning).
+All notable changes to this project will be documented in this file.
 
-### Notes (scope)
+This project follows a design-first, architecture-driven development model.
+Early versions may include intentional refactors as semantics are clarified.
 
-You asked for `RpcConfig` under `src/config/rpc_config.rs` and a shared builder under `src/rpc_builder.rs`, so the tar includes those **new files** in addition to the 6 you listed.
+---
+
+## [0.2.0] – 2026-02-03
+
+### Fixed
+- Corrected in-process memory transport semantics to require shared state
+- Eliminated client/server isolation bugs caused by per-transport subscription maps
+- Prevented unintended self-delivery behavior in loopback scenarios
+
+### Added
+- `math_memory` example demonstrating correct in-process client/server usage
+- Clear separation between in-process (memory) and brokered transport examples
+
+### Changed
+- Updated `math_client` and `math_server` examples to compile against current APIs
+- Refined transport abstractions to better reflect real broker semantics
+- Aligned integration tests with corrected transport model
+
+### Removed
+- Removed obsolete transport runner no longer compatible with current architecture
+
+---
+
+## [0.1.0] – 2026-02-03
+
+### Added
+- Initial transport-agnostic asynchronous RPC architecture
+- Envelope-based request/response framing with explicit correlation IDs
+- `RpcClient` and `RpcServer` abstractions independent of transport addressing
+- In-memory reference transport for development and testing
+- Method-based server dispatch model
+- Typed, crate-scoped error handling
+- Initial architecture documentation and examples
