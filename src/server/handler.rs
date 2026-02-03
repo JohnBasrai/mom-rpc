@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// Handlers take request payload bytes and return response payload bytes.
 /// Routing, correlation, and transport concerns are handled by the server.
 pub(super) type BoxedHandler =
-    Arc<dyn Fn(Bytes) -> Pin<Box<dyn Future<Output = Result<Bytes>> + Send>> + Send + Sync>;
+    Arc<dyn Fn(Bytes) -> Pin<Box<dyn Future<Output = Result<HandlerOutput>> + Send>> + Send + Sync>;
 
 /// Wrap a typed handler function into a type-erased handler.
 ///
