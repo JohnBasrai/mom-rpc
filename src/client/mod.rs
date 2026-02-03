@@ -99,9 +99,7 @@ impl RpcClient {
         // (We build the Arc first so the rx task can call back into client.)
         let inner = Arc::new_cyclic(|weak| {
             // ---
-            let client = RpcClient {
-                inner: weak.upgrade().unwrap(),
-            };
+            let weak = weak.clone();
 
             // Spawn receive loop.
             let rx_task = tokio::spawn(async move {
@@ -109,14 +107,19 @@ impl RpcClient {
                 loop {
                     match handle.inbox.recv().await {
                         Some(env) => {
-                            if let Err(_err) = client.handle_envelope(env) {
-                                #[cfg(feature = "logging")]
-                                log::warn!("client response handling error: {_err}");
+                            if let Some(inner) = weak.upgrade() {
+                                let client = RpcClient { inner };
+                                if let Err(_err) = client.handle_envelope(env) {
+                                    #[cfg(feature = "logging")]
+                                    log::warn!("client response handling error: {_err}");
+                                }
+                            } else {
+                                // Inner was dropped, exit loop
+                                break;
                             }
                         }
                         None => {
                             // Transport closed or subscription dropped.
-                            // Debug log only for visibility
                             #[cfg(feature = "logging")]
                             log::debug!("transport closed or subscription dropped");
                             break;
@@ -143,7 +146,7 @@ impl RpcClient {
     /// constructs the client using `with_transport()`.
     pub async fn new(node_id: String) -> Result<Self> {
         // ---
-        let transport = crate::create_transport().await?;
+        let transport = crate::create_transport(&node_id).await?;
         Self::with_transport(transport, node_id).await
     }
 
@@ -173,14 +176,14 @@ impl RpcClient {
             pending.insert(correlation_id_str.clone(), tx);
         }
 
-        let request_addr = Address::from(format!("requests/{target_node_id}/{method}"));
+        let request_addr = Address::from(format!("requests/{target_node_id}"));
 
         let value: Value = serde_json::to_value(req)?;
         let bytes = serde_json::to_vec(&value)?;
 
         let env = Envelope::request(
             request_addr,
-            "add".into(),
+            method.into(),
             Bytes::from(bytes),
             Arc::from(correlation_id.to_string()),
             Address::from(format!("responses/{}", self.inner.node_id)),
@@ -198,11 +201,11 @@ impl RpcClient {
             )
             .await?;
 
-        let response = rx.await.map_err(|err| {
+        let response = rx.await.map_err(|_err| {
             #[cfg(feature = "logging")]
             log::warn!(
                 "response channel closed (server dropped or transport shutdown:{:?})",
-                err
+                _err
             );
             Error::Transport
         })?;
@@ -238,7 +241,7 @@ impl RpcClient {
         // (Subscription should already constrain this for memory transport.)
         let expected_addr = format!("responses/{}", self.node_id());
 
-        if &*env.address.0 != expected_addr {
+        if *env.address.0 != expected_addr {
             return Ok(());
         }
 

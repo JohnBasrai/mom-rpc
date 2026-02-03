@@ -43,17 +43,15 @@ pub use domain::{
     TransportPtr,
 };
 
-pub async fn create_transport() -> Result<TransportPtr> {
+pub async fn create_transport(transport_id: &str) -> Result<TransportPtr> {
     // ---
     #[cfg(feature = "transport-mqtt-async-client")]
     {
-        return create_mqtt_async_client_transport().await;
+        return create_mqtt_async_client_transport(transport_id).await;
     }
 
     // Future transport impls go here
 
     // Fallback / default
-    create_memory_transport().await
+    create_memory_transport(transport_id).await
 }
-
-pub use transport::{run, TransportConsumer};

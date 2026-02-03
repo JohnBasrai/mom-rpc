@@ -5,6 +5,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use bytes::Bytes;
+use tokio::task::JoinHandle;
+
+use crate::SubscribeOptions;
 
 use super::{
     // ---
@@ -14,7 +17,6 @@ use super::{
     PublishOptions,
     Result,
     Subscription,
-    TransportConsumer,
     TransportPtr,
 };
 
@@ -71,6 +73,40 @@ impl RpcServer {
         }
     }
 
+    pub async fn run(&self) -> Result<JoinHandle<Result<()>>> {
+        // ---
+        let sub = Subscription::from(format!("requests/{}", self.node_id()));
+
+        let mut handle = self
+            .inner
+            .transport
+            .subscribe(sub, SubscribeOptions { durable: false })
+            .await?;
+
+        let server = self.clone();
+
+        let join = tokio::spawn(async move {
+            loop {
+                match handle.inbox.recv().await {
+                    Some(env) => {
+                        if let Err(_err) = server.handle_envelope(env).await {
+                            #[cfg(feature = "logging")]
+                            log::warn!("server request handling error: {_err}");
+                        }
+                    }
+                    None => {
+                        #[cfg(feature = "logging")]
+                        log::debug!("transport closed or subscription dropped");
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        });
+
+        Ok(join)
+    }
+
     /// Register a typed async handler for a method.
     ///
     /// The handler receives the decoded request payload type and returns a response
@@ -90,11 +126,6 @@ impl RpcServer {
 
     pub(crate) fn node_id(&self) -> &str {
         &self.inner.node_id
-    }
-
-    fn request_prefix(&self) -> String {
-        // ---
-        format!("requests/{}/", self.node_id())
     }
 
     async fn dispatch_request(&self, method: &str, bytes: Bytes) -> Result<Bytes> {
@@ -135,12 +166,8 @@ impl RpcServer {
             )
             .await
     }
-}
 
-#[async_trait::async_trait]
-impl TransportConsumer for RpcServer {
-    // ---
-
+    #[cfg(false)]
     fn subscription(&self) -> Subscription {
         // ---
         // We want to receive requests for any method under:
@@ -157,24 +184,11 @@ impl TransportConsumer for RpcServer {
 
         let reply_to = env.reply_to.ok_or(Error::MissingResponseTopic)?;
 
-        let correlation_id = env.correlation_id.clone();
+        let correlation_id = env.correlation_id.ok_or(Error::InvalidRequest)?;
 
         let response_payload = self.dispatch_request(method, env.payload).await?;
 
-        let response = Envelope {
-            // ---
-            address: reply_to,
-            method: None,
-            payload: response_payload,
-            correlation_id,
-            reply_to: None,
-            content_type: None,
-        };
-
-        let pub_opts = PublishOptions {
-            durable: false,
-            ttl_ms: None,
-        };
-        self.inner.transport.publish(response, pub_opts).await
+        self.publish_response(reply_to.0.to_string(), response_payload, correlation_id)
+            .await
     }
 }

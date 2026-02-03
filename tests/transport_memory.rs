@@ -17,7 +17,7 @@ async fn memory_subscribe_then_publish_delivers() {
     // ---
     // Arrange
     // ---
-    let transport = mqtt_rpc_rs::create_memory_transport()
+    let transport = mqtt_rpc_rs::create_memory_transport("mstpd")
         .await
         .expect("failed to create memory transport");
 
@@ -33,7 +33,7 @@ async fn memory_subscribe_then_publish_delivers() {
     let env = Envelope::request(
         address.clone(),
         "".into(),
-        payload,
+        payload.clone(),
         CorrelationId::generate().as_str().into(),
         Address::from("tbd"),
         "application/json".into(),

@@ -1,16 +1,15 @@
-//! Math RPC client example
+//! Math RPC client example.
 //!
-//! This example sends a single RPC request to the math server and
-//! prints the response.
+//! NOTE:
+//! This example is intended for brokered transports (MQTT, RabbitMQ, etc).
+//! It cannot be used with MemoryTransport, which is in-process only.
 //!
 //! Run with: cargo run --example math_client
 //!
-//! Requires: mosquitto running on localhost:1883
+//! Requires: a broker to be running
 
-use anyhow::Result;
+use mqtt_rpc_rs::{create_transport, RpcClient};
 use serde::{Deserialize, Serialize};
-
-use mqtt_rpc_rs::{RpcClient, RpcClientBuilder, RpcConfig};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AddRequest {
@@ -24,20 +23,19 @@ struct AddResponse {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     // ---
-    // Build and start the RPC client
-    let config = RpcConfig::new("mqtt://localhost:1883").with_keep_alive_secs(10);
+    // Transport will eventually be MQTT / Rabbit / etc.
+    let transport = create_transport("broker").await?;
 
-    let client: RpcClient = RpcClientBuilder::new("math-client", config).start().await?;
+    let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
 
-    // ---
-    // Send an RPC request
     let resp: AddResponse = client
         .request_to("math", "add", AddRequest { a: 2, b: 3 })
         .await?;
 
     println!("2 + 3 = {}", resp.sum);
+    transport.close().await?;
 
     Ok(())
 }

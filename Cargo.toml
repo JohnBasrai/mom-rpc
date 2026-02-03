@@ -22,8 +22,9 @@ url = "2"
 uuid = { version = "1.11", features = ["v4", "serde"] }
 
 [dev-dependencies]
-tokio-test = "0.4"
 env_logger = "0.11"
+futures = "0.3.31"
+tokio-test = "0.4"
 
 [[example]]
 name = "math_server"
@@ -35,6 +36,6 @@ path = "examples/math_client.rs"
 
 
 [features]
-default = []
+default = ["logging"]
 logging = ["log"]
 transport-mqtt-async-client = []

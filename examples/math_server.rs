@@ -1,15 +1,15 @@
-//! Math RPC server example
+//! Math RPC server example.
 //!
-//! This is a pedagogical example showing how to use mqtt-rpc-rs server API.
-//! It demonstrates handler registration and concurrent request processing.
+//! NOTE:
+//! This example is intended for brokered transports (MQTT, RabbitMQ, etc).
+//! It cannot be used with MemoryTransport, which is in-process only.
 //!
 //! Run with: cargo run --example math_server
 //!
-//! Requires: mosquitto running on localhost:1883
+//! Requires: a broker to be running
 
+use mqtt_rpc_rs::{create_transport, RpcServer};
 use serde::{Deserialize, Serialize};
-
-use mqtt_rpc_rs::{RpcConfig, RpcServer, RpcServerBuilder};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AddRequest {
@@ -23,26 +23,25 @@ struct AddResponse {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     // ---
-    // Build and start the RPC server
-    let config = RpcConfig::new("mqtt://localhost:1883").with_keep_alive_secs(10);
+    // Transport will eventually be MQTT / Rabbit / etc.
+    let transport = create_transport("broker").await?;
 
-    let server: RpcServer = RpcServerBuilder::new("math-server", config).start().await?;
+    let server = RpcServer::new(transport.clone(), "math".to_owned());
 
-    // Register a handler for the "add" method
-    server.register("add", |bytes| {
-        // ---
-        let req: AddRequest = serde_json::from_slice(&bytes).expect("failed to decode request");
-
-        let resp = AddResponse { sum: req.a + req.b };
-
-        serde_json::to_vec(&resp).expect("failed to encode response")
+    server.register("add", |req: AddRequest| async move {
+        Ok(AddResponse { sum: req.a + req.b })
     });
 
-    println!("math_server running. Press Ctrl-C to exit.");
+    // Run until externally terminated
+    let handle = server.run().await?;
 
-    // Keep the process alive
-    tokio::signal::ctrl_c().await?;
+    // Block forever (or until signal handling is added later)
+    futures::future::pending::<()>().await;
+
+    transport.close().await?;
+    handle.await??;
+
     Ok(())
 }

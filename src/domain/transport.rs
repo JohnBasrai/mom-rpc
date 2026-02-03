@@ -166,6 +166,7 @@ impl Envelope {
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct PublishOptions {
+    // ---
     /// Whether the message should be treated as durable.
     pub durable: bool,
 
@@ -215,6 +216,9 @@ pub struct SubscriptionHandle {
 #[allow(dead_code)]
 pub trait Transport: Send + Sync {
     // ---
+    /// Returns the transport_id of the transport.
+    fn transport_id(&self) -> &str;
+
     /// Publish an envelope to the given address.
     async fn publish(&self, env: Envelope, opts: PublishOptions) -> Result<()>;
 

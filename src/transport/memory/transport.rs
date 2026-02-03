@@ -50,11 +50,15 @@ use crate::{
 struct MemoryTransport {
     // ---
     subscriptions: RwLock<HashMap<Subscription, Vec<mpsc::Sender<Envelope>>>>,
+    transport_id: String,
 }
 
 #[async_trait::async_trait]
 impl Transport for MemoryTransport {
     // ---
+    fn transport_id(&self) -> &str {
+        self.transport_id.as_str()
+    }
 
     /// Publish an envelope to all matching subscriptions.
     ///
@@ -69,10 +73,19 @@ impl Transport for MemoryTransport {
 
         for (sub, senders) in subs.iter() {
             if sub.0 == env.address.0 {
+                #[cfg(feature = "logging")]
+                log::debug!("{}: publish to {:?}", self.transport_id(), sub);
+
                 for sender in senders {
                     // Ignore send failures; a closed channel indicates
                     // a dropped SubscriptionHandle.
-                    let _ = sender.send(env.clone()).await;
+                    match sender.send(env.clone()).await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            #[cfg(feature = "logging")]
+                            log::info!("publish error {:?}", err);
+                        }
+                    }
                 }
             }
         }
@@ -92,6 +105,9 @@ impl Transport for MemoryTransport {
     ) -> Result<SubscriptionHandle> {
         // ---
 
+        #[cfg(feature = "logging")]
+        log::debug!("{}: subscribe to {:?}", self.transport_id(), sub);
+
         let (tx, rx) = mpsc::channel(16);
 
         let mut subs = self.subscriptions.write().await;
@@ -106,6 +122,9 @@ impl Transport for MemoryTransport {
     async fn close(&self) -> Result<()> {
         // ---
 
+        #[cfg(feature = "logging")]
+        log::debug!("{}: closing transport...", self.transport_id());
+
         let mut subs = self.subscriptions.write().await;
         subs.clear();
         Ok(())
@@ -115,11 +134,14 @@ impl Transport for MemoryTransport {
 /// Create a new in-memory transport.
 ///
 /// This transport is always available and requires no external resources.
-pub async fn create_transport() -> Result<TransportPtr> {
+pub async fn create_transport(transport_id: &str) -> Result<TransportPtr> {
     // ---
+    #[cfg(feature = "logging")]
+    log::debug!("{transport_id}: create memory transport");
 
     let transport = MemoryTransport {
         // ---
+        transport_id: transport_id.to_owned(),
         subscriptions: RwLock::new(HashMap::new()),
     };
 

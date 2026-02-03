@@ -6,7 +6,6 @@
 //!
 //! Domain code must not depend on transport-specific types.
 mod memory;
-mod runner;
 
 #[cfg(feature = "transport-mqtt-async-client")]
 mod mqtt_async_client;
@@ -16,5 +15,3 @@ pub use mqtt_async_client::create_transport as create_mqtt_async_client_transpor
 
 #[allow(unused)]
 pub use memory::create_transport as create_memory_transport;
-
-pub use runner::{run, TransportConsumer};

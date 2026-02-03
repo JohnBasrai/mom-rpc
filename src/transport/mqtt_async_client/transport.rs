@@ -25,13 +25,21 @@ struct MqttAsyncClientTransport {
     // For example:
     // client: mqtt_async_client::Client,
     // subscriptions: DashMap<Subscription, mpsc::Sender<Envelope>>,
+    transport_id: String,
 }
 
 #[async_trait::async_trait]
 impl Transport for MqttAsyncClientTransport {
     // ---
+    fn transport_id(self) -> &str {
+        self.transport_id.as_str()
+    }
+
     async fn publish(&self, env: Envelope, _opts: PublishOptions) -> Result<()> {
         // ---
+        #[cfg(feature = "logging")]
+        log::debug!("{}: publish to {:?}", self.transport_id(), subs);
+
         // TODO:
         // - map Address -> MQTT topic
         // - serialize Envelope payload
@@ -48,6 +56,9 @@ impl Transport for MqttAsyncClientTransport {
         _opts: SubscribeOptions,
     ) -> Result<SubscriptionHandle> {
         // ---
+        #[cfg(feature = "logging")]
+        log::debug!("{}: subscribe to {:?}", self.transport_id(), sub);
+
         // TODO:
         // - map Subscription -> MQTT topic filter
         // - register callback / stream
@@ -61,6 +72,8 @@ impl Transport for MqttAsyncClientTransport {
 
     async fn close(&self) -> Result<()> {
         // ---
+        #[cfg(feature = "logging")]
+        log::debug!("{}: closing transport...", self.transport_id());
         // TODO: graceful shutdown
         Ok(())
     }
@@ -69,15 +82,18 @@ impl Transport for MqttAsyncClientTransport {
 /// Create an MQTT-based transport using mqtt-async-client.
 ///
 /// This is the ONLY symbol exposed from this module.
-pub async fn create_transport(/* opts later */) -> Result<TransportPtr> {
+pub async fn create_transport(id: &str /* more opts later */) -> Result<TransportPtr> {
     // ---
     // TODO:
     // - build mqtt-async-client options
     // - connect client
     // - set up background receive loop if needed
+    #[cfg(feature = "logging")]
+    log::debug!("{transport_id}: create mqtt_async_client transport");
 
     let transport = MqttAsyncClientTransport {
         // init fields
+        transport_id,
     };
 
     Ok(Arc::new(transport))
