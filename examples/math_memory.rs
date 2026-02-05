@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
 
     let transport = create_transport(&config).await?;
 
-    let server = RpcServer::new(transport.clone(), "math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
 
     server.register("add", |req: AddRequest| async move {
         std::thread::sleep(std::time::Duration::from_millis(1000));

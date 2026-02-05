@@ -195,7 +195,7 @@ The server:
 Handlers are type-erased internally but strongly typed at registration time.
 
 **Lifecycle:**
-1. Create server via `RpcServer::new(transport, node_id)`
+1. Create server via `RpcServer::with_transport(transport, node_id)`
 2. Register handlers via `register(method, handler)`
 3. Start processing via `run()` which returns a `JoinHandle`
 4. The receive loop runs until the transport closes

@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
     let transport = create_transport(&config).await?;
 
     // Create server with transport and service name
-    let server = RpcServer::new(transport.clone(), "math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
 
     // Register typed handlers
     server.register("add", |req: AddRequest| async move {
@@ -158,6 +158,21 @@ The design separates:
 
 For details, see:
 **`docs/architecture.md`**
+
+---
+
+## Security note
+
+The MQTT transport uses `mqtt-async-client`, which depends on an end-of-life TLS stack (rustls 0.19). This is a known ecosystem limitation.
+
+`mom-rpc` intentionally treats transport security as an external concern.
+In production deployments, users should:
+
+- terminate TLS at the broker (recommended), or
+- provide a custom transport backed by a maintained MQTT or message broker client
+
+This avoids baking TLS policy and cryptographic maintenance into the RPC layer.
+
 
 ---
 

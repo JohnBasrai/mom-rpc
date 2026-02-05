@@ -64,7 +64,7 @@ struct Inner {
 
 impl RpcServer {
     // ---
-    pub fn new(transport: TransportPtr, node_id: String) -> Self {
+    pub fn with_transport(transport: TransportPtr, node_id: String) -> Self {
         // ---
         Self {
             inner: Arc::new(Inner {
