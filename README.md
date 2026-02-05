@@ -64,9 +64,28 @@ The memory transport:
 It provides a deterministic loopback environment for testing and examples.
 It does **not** model an external broker.
 
-Broker-backed transports (e.g. MQTT, RabbitMQ) are implemented behind feature
-flags and run out-of-process, with shared state managed by the broker itself.
-All transports conform to the same RPC contract.
+Broker-backed transports (e.g. MQTT) are implemented behind feature flags and
+run out-of-process, with shared state managed by the broker itself.
+All transports conform to the same RPC contract and approximate the in-memory
+transport’s delivery semantics as closely as the underlying system allows.
+
+### Available brokered transports
+
+* **rumqttc (MQTT)** — enabled via the `transport_rumqttc` feature
+  Actor-based implementation with a single broker connection, lazy startup,
+  SUBACK-confirmed subscriptions, and topic-based fanout semantics.
+
+Additional transports may be added in the future behind feature flags.
+
+---
+
+## Feature flags
+
+* `transport_rumqttc` — Enable MQTT transport backed by `rumqttc`
+* `transport_mqttac` — Enable legacy MQTT transport based on `mqtt-async-client`
+* `logging` — Enable log-based diagnostics
+
+The in-memory transport is always enabled and requires no feature flags.
 
 ---
 
@@ -79,26 +98,21 @@ use mom_rpc::{create_transport, RpcConfig, RpcServer, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Create transport (memory for testing, MQTT for production)
     let config = RpcConfig::memory("math-server");
     let transport = create_transport(&config).await?;
 
-    // Create server with transport and service name
     let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
 
-    // Register typed handlers
     server.register("add", |req: AddRequest| async move {
         Ok(AddResponse { sum: req.a + req.b })
     });
 
-    // Setup graceful shutdown
     let server_clone = server.clone();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl+C");
         server_clone.shutdown().await.expect("shutdown failed");
     });
 
-    // Run server (blocks until shutdown)
     server.run().await?;
     transport.close().await?;
     Ok(())
@@ -112,14 +126,12 @@ use mom_rpc::{create_transport, RpcClient, RpcConfig, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Create transport (shared with server for memory, broker for MQTT)
     let config = RpcConfig::memory("math-client");
     let transport = create_transport(&config).await?;
 
-    // Create client with transport and node ID
-    let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+    let client =
+        RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
 
-    // Make typed RPC call
     let resp: AddResponse = client
         .request_to("math", "add", AddRequest { a: 2, b: 3 })
         .await?;
@@ -130,7 +142,7 @@ async fn main() -> Result<()> {
 }
 ```
 
-**Note:** Examples above show actual API. For complete working code, see [`examples/math_memory.rs`](examples/math_memory.rs).
+**Note:** For complete working code, see `examples/math_memory.rs`.
 
 ---
 
@@ -156,23 +168,22 @@ The design separates:
 * RPC semantics
 * user-facing APIs
 
-For details, see:
-**`docs/architecture.md`**
+For details, see `docs/architecture.md`.
 
 ---
 
 ## Security note
 
-The MQTT transport uses `mqtt-async-client`, which depends on an end-of-life TLS stack (rustls 0.19). This is a known ecosystem limitation.
+The `rumqttc` transport does not embed TLS policy or broker security concerns
+into the RPC layer.
 
-`mom-rpc` intentionally treats transport security as an external concern.
-In production deployments, users should:
+Production deployments should:
 
-- terminate TLS at the broker (recommended), or
-- provide a custom transport backed by a maintained MQTT or message broker client
+* terminate TLS at the broker (recommended), or
+* use broker-side authentication and authorization mechanisms
 
-This avoids baking TLS policy and cryptographic maintenance into the RPC layer.
-
+Transport security is intentionally treated as an external concern to avoid
+coupling RPC semantics to cryptographic policy or client library lifecycles.
 
 ---
 

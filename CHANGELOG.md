@@ -7,6 +7,23 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.3.0] - 2026-03-05
+
+### Added
+
+* Optional **rumqttc-based MQTT transport** behind the `transport_rumqttc` feature flag
+* Actor-based MQTT transport implementation with single `EventLoop` ownership
+* Lazy broker connection initiated on first event loop poll
+* SUBACK-confirmed subscription registration for brokered transports
+* Topic-based fanout semantics aligned with in-process memory transport behavior
+
+### Changed
+
+* Extended transport selection logic to prefer `transport_rumqttc` when enabled
+* Clarified transport precedence and fallback behavior in `create_transport()`
+
+---
+
 ## [0.2.0] – 2026-02-03
 
 ### Fixed
