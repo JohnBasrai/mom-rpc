@@ -6,16 +6,13 @@
 //!
 //! Domain code must not depend on transport-specific types.
 
-mod common;
 mod memory;
 
-#[cfg(feature = "transport-mqtt-async-client")]
+#[cfg(feature = "transport_mqttac")]
 mod mqtt_async_client;
 
-#[cfg(feature = "transport-mqtt-async-client")]
+#[cfg(feature = "transport_mqttac")]
 pub use mqtt_async_client::create_transport as create_mqtt_async_client_transport;
 
 #[allow(unused)]
 pub use memory::create_transport as create_memory_transport;
-
-use common::SubscriptionManager;

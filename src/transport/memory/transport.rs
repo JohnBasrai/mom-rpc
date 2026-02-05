@@ -10,7 +10,10 @@
 //! as closely as their underlying systems allow and to document any
 //! unavoidable deviations.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+
+use tokio::sync::{mpsc, RwLock};
 
 #[allow(unused_imports)]
 use crate::{
@@ -19,14 +22,13 @@ use crate::{
     Envelope,
     PublishOptions,
     Result,
+    RpcConfig,
     SubscribeOptions,
     Subscription,
     SubscriptionHandle,
     Transport,
     TransportPtr,
 };
-
-use super::SubscriptionManager;
 
 /// In-memory transport.
 ///
@@ -48,7 +50,7 @@ use super::SubscriptionManager;
 /// - Exact emulation of MQTT, AMQP, or other broker semantics
 struct MemoryTransport {
     // ---
-    subscriptions: SubscriptionManager,
+    subscriptions: RwLock<HashMap<Subscription, Vec<mpsc::Sender<Envelope>>>>,
     transport_id: String,
 }
 
@@ -68,7 +70,27 @@ impl Transport for MemoryTransport {
     /// transport layer.
     async fn publish(&self, env: Envelope, _opts: PublishOptions) -> Result<()> {
         // ---
-        self.subscriptions.fanout(&env, &self.transport_id).await;
+        let subs = self.subscriptions.read().await;
+
+        for (sub, senders) in subs.iter() {
+            if sub.0 == env.address.0 {
+                #[cfg(feature = "logging")]
+                log::debug!("{}: publish to {:?}", self.transport_id(), sub);
+
+                for sender in senders {
+                    // Ignore send failures; a closed channel indicates
+                    // a dropped SubscriptionHandle.
+                    match sender.send(env.clone()).await {
+                        Ok(_) => {}
+                        Err(_err) => {
+                            #[cfg(feature = "logging")]
+                            log::info!("publish error {:?}", _err);
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -87,7 +109,10 @@ impl Transport for MemoryTransport {
         #[cfg(feature = "logging")]
         log::debug!("{}: subscribe to {:?}", self.transport_id(), sub);
 
-        let rx = self.subscriptions.add(sub).await;
+        let (tx, rx) = mpsc::channel(16);
+
+        let mut subs = self.subscriptions.write().await;
+        subs.entry(sub).or_insert_with(Vec::new).push(tx);
 
         Ok(SubscriptionHandle { inbox: rx })
     }
@@ -101,7 +126,8 @@ impl Transport for MemoryTransport {
         #[cfg(feature = "logging")]
         log::debug!("{}: closing transport...", self.transport_id());
 
-        self.subscriptions.clear().await;
+        let mut subs = self.subscriptions.write().await;
+        subs.clear();
         Ok(())
     }
 }
@@ -109,15 +135,16 @@ impl Transport for MemoryTransport {
 /// Create a new in-memory transport.
 ///
 /// This transport is always available and requires no external resources.
-pub async fn create_transport(transport_id: &str) -> Result<TransportPtr> {
+pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
+    let transport_id = config.transport_id.clone();
     #[cfg(feature = "logging")]
     log::debug!("{transport_id}: create memory transport");
 
     let transport = MemoryTransport {
         // ---
-        transport_id: transport_id.to_owned(),
-        subscriptions: SubscriptionManager::new(),
+        transport_id,
+        subscriptions: RwLock::new(HashMap::new()),
     };
 
     Ok(Arc::new(transport))

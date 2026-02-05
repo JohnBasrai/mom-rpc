@@ -4,6 +4,4 @@
 //! `Transport` trait without leaking MQTT concepts upward.
 
 mod transport;
-
-use super::SubscriptionManager;
 pub use transport::create_transport;

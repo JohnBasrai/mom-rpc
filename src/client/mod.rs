@@ -144,10 +144,10 @@ impl RpcClient {
     ///
     /// This calls `crate::create_transport()` (feature-driven) and then
     /// constructs the client using `with_transport()`.
-    pub async fn new(node_id: String) -> Result<Self> {
+    pub async fn new(config: &super::RpcConfig, node_id: &str) -> Result<Self> {
         // ---
-        let transport = crate::create_transport(&node_id).await?;
-        Self::with_transport(transport, node_id).await
+        let transport = crate::create_transport(config).await?;
+        Self::with_transport(transport, node_id.into()).await
     }
 
     /// Send an RPC request to a target service node.

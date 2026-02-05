@@ -38,6 +38,9 @@ This crate solves that by providing:
 * **Async-first**
   Built for Tokio, uses `async/await` throughout.
 
+* **Cross-platform**
+  Pure Rust with no platform-specific dependencies. Suitable for embedded/edge deployments.
+
 * **No callbacks required**
   Client APIs return futures; servers use async handlers.
 
@@ -72,39 +75,62 @@ All transports conform to the same RPC contract.
 ### Server
 
 ```rust
-use mom_rpc::{RpcServer, Result};
+use mom_rpc::{create_transport, RpcConfig, RpcServer, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut server = RpcServer::new();
+    // Create transport (memory for testing, MQTT for production)
+    let config = RpcConfig::memory("math-server");
+    let transport = create_transport(&config).await?;
 
-    server.register("math.add", |(a, b): (i32, i32)| async move {
-        Ok(a + b)
+    // Create server with transport and service name
+    let server = RpcServer::new(transport.clone(), "math".to_owned());
+
+    // Register typed handlers
+    server.register("add", |req: AddRequest| async move {
+        Ok(AddResponse { sum: req.a + req.b })
     });
 
-    server.run().await
+    // Setup graceful shutdown
+    let server_clone = server.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl+C");
+        server_clone.shutdown().await.expect("shutdown failed");
+    });
+
+    // Run server (blocks until shutdown)
+    server.run().await?;
+    transport.close().await?;
+    Ok(())
 }
 ```
 
 ### Client
 
 ```rust
-use mpm_rpc::{RpcClient, Result};
+use mom_rpc::{create_transport, RpcClient, RpcConfig, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = RpcClient::new();
+    // Create transport (shared with server for memory, broker for MQTT)
+    let config = RpcConfig::memory("math-client");
+    let transport = create_transport(&config).await?;
 
-    let sum: i32 = client
-        .request_to("server", "math.add", (2, 3))
+    // Create client with transport and node ID
+    let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+
+    // Make typed RPC call
+    let resp: AddResponse = client
+        .request_to("math", "add", AddRequest { a: 2, b: 3 })
         .await?;
 
-    assert_eq!(sum, 5);
+    assert_eq!(resp.sum, 5);
+    transport.close().await?;
     Ok(())
 }
 ```
 
-(Examples use the in-memory transport by default.)
+**Note:** Examples above show actual API. For complete working code, see [`examples/math_memory.rs`](examples/math_memory.rs).
 
 ---
 
@@ -137,6 +163,5 @@ For details, see:
 
 ## Status
 
-* Actively developed
-* API still evolving
+* Early development / API unstable
 * Feedback welcome

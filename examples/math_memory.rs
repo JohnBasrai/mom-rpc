@@ -1,4 +1,4 @@
-use mom_rpc::{create_transport, RpcClient, RpcServer};
+use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -13,9 +13,11 @@ struct AddResponse {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     // ---
-    let transport = create_transport("loopback").await?;
+    let config = RpcConfig::memory("math");
+
+    let transport = create_transport(&config).await?;
 
     let server = RpcServer::new(transport.clone(), "math".to_owned());
 
@@ -24,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
         Ok(AddResponse { sum: req.a + req.b })
     });
 
-    let _handle = server.run().await?;
+    let _handle = server.spawn();
 
     let client = RpcClient::with_transport(transport.clone(), "Roxy".to_string()).await?;
 
@@ -34,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
 
     println!("20 + 3 = {}", resp.sum);
 
+    server.shutdown().await?;
     transport.close().await?;
     Ok(())
 }
