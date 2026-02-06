@@ -174,16 +174,16 @@ For details, see `docs/architecture.md`.
 
 ## Security note
 
-The `rumqttc` transport does not embed TLS policy or broker security concerns
-into the RPC layer.
+The `rumqttc` transport does not embed TLS policy or broker security concerns into the RPC layer.
 
 Production deployments should:
 
 * terminate TLS at the broker (recommended), or
 * use broker-side authentication and authorization mechanisms
 
-Transport security is intentionally treated as an external concern to avoid
-coupling RPC semantics to cryptographic policy or client library lifecycles.
+Transport security is intentionally treated as an external concern to avoid coupling RPC semantics to cryptographic policy or client library lifecycles.
+
+> **Note:** The legacy `transport_mqttac` feature is optional and disabled by default. It pulls in an older TLS stack via upstream dependencies and is not included in builds unless explicitly enabled. The recommended MQTT transport is `transport_rumqttc`.
 
 ---
 

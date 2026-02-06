@@ -1,0 +1,30 @@
+[advisories]
+ignore = [
+# IMPORTANT:
+# These advisories only apply when the optional `transport_mqttac`
+# feature is explicitly enabled. With default features, the affected
+# dependency tree is not built and is not present in the final binary.
+#
+# The following advisories are triggered by the optional
+# `transport_mqttac` feature via the `mqtt-async-client` crate.
+#
+# These vulnerabilities originate from its pinned TLS stack:
+#   mqtt-async-client
+#     → tokio-rustls
+#       → rustls 0.19
+#         → ring / webpki
+#
+# They cannot be resolved locally without forking or replacing
+# the upstream dependency.
+#
+# This crate provides an alternative MQTT transport based on
+# `rumqttc` (`transport_rumqttc` feature), which does NOT rely
+# on this TLS stack and is the recommended secure option.
+#
+# The affected transport remains feature-gated and is not
+# enabled by default.
+
+  "RUSTSEC-2025-0009", # ring: unmaintained + panic risk
+  "RUSTSEC-2024-0336", # rustls: potential infinite loop / DoS
+  "RUSTSEC-2023-0052", # webpki: CPU denial of service
+]
