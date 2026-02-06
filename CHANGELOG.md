@@ -7,7 +7,7 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
-## [0.3.0] - 2026-03-05
+## [0.3.0] - 2026-02-06
 
 ### Added
 
