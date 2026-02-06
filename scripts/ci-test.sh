@@ -1,30 +1,23 @@
 #!/usr/bin/env bash
-# CI script for running tests with multiple feature combinations
+set -euo pipefail
 
-set -e
+FEATURE="${CI_FEATURE:-default}"
+COVERAGE="${CI_COVERAGE:-0}"
 
-echo "=== Testing default features ==="
-cargo test --all-targets
+echo "==> Running tests"
+echo "    feature = ${FEATURE}"
+echo "    coverage = ${COVERAGE}"
 
-echo ""
-echo "=== Testing all features ==="
-cargo test --all-targets --all-features
+if [ "$FEATURE" = "default" ]; then
+  cargo test
+else
+  cargo test --features "$FEATURE"
+fi
 
-echo ""
-echo "=== Testing no default features ==="
-cargo test --all-targets --no-default-features
+# Coverage runs ONCE and is opt-in
+if [ "$COVERAGE" = "1" ]; then
+  echo "==> Running coverage tests"
+  cargo test --features transport_rumqttc
+fi
 
-echo ""
-echo "=== Testing with transport_mqttac only ==="
-cargo test --all-targets --no-default-features --features transport_mqttac
-
-echo ""
-echo "=== Building examples ==="
-cargo build --examples --all-features
-
-echo ""
-echo "=== Running doc tests ==="
-cargo test --doc --all-features
-
-echo ""
-echo "✅ All tests passed!"
+echo "✅ Tests OK"

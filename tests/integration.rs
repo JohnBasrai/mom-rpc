@@ -48,7 +48,7 @@ impl MathServer {
         let transport = create_memory_transport(&config).await?;
         // Use test-specific node_id to avoid subscription conflicts
         let node_id = format!("math-{}", id);
-        let server = RpcServer::new(transport.clone(), node_id.clone());
+        let server = RpcServer::with_transport(transport.clone(), node_id.clone());
 
         server.register("add", |req: AddRequest| async move {
             // ---
@@ -161,7 +161,7 @@ async fn test_timeout() -> Result<()> {
 
     let config = RpcConfig::memory("test_timeout");
     let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::new(transport.clone(), "lazy-math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "lazy-math".to_owned());
 
     server.register("add", |req: AddRequest| async move {
         tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -206,7 +206,7 @@ async fn test_error_response() -> Result<()> {
 
     let config = RpcConfig::memory("test_error");
     let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::new(transport.clone(), "error-math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "error-math".to_owned());
 
     server.register("divide", |req: AddRequest| async move {
         if req.b == 0 {
@@ -245,7 +245,7 @@ async fn test_multiple_clients() -> Result<()> {
 
     let config = RpcConfig::memory("test_multi_client");
     let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::new(transport.clone(), "multi-math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "multi-math".to_owned());
 
     server.register("add", |req: AddRequest| async move {
         Ok(AddResponse { sum: req.a + req.b })
@@ -296,7 +296,7 @@ async fn test_transport_disconnect() -> Result<()> {
 
     let config = RpcConfig::memory("test_disconnect");
     let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::new(transport.clone(), "disconnect-math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "disconnect-math".to_owned());
 
     server.register("add", |req: AddRequest| async move {
         // Slow handler to ensure request is in-flight

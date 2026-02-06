@@ -1,6 +1,6 @@
 [package]
 name = "mom-rpc"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["John Basrai"]
 description = "RPC semantics over MQTT pub/sub with request/response correlation"
@@ -13,14 +13,13 @@ categories = ["network-programming", "asynchronous"]
 anyhow            = "1.0"
 async-trait       = "0.1"
 bytes             = { version = "1", features = ["serde"] }
-futures           = { version = "0.3", optional = true }
 log               = { version = "0.4", optional = true }
 mqtt-async-client = { version = "0.3", optional = true }
+rumqttc           = { version = "0.24", optional = true }
 serde             = { version = "1", features = ["derive", "rc"] }
 serde_json        = "1"
 thiserror         = "2"
 tokio             = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
-url               = "2"
 uuid              = { version  = "1.11", features = ["v4", "serde"] }
 
 [dev-dependencies]
@@ -41,4 +40,5 @@ path = "examples/math_client.rs"
 default = ["logging"]
 logging = ["log"]
 transport_mqttac = ["mqtt-async-client"]
+transport_rumqttc = ["rumqttc"]
 transport_acme = []

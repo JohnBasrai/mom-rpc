@@ -11,8 +11,14 @@ mod memory;
 #[cfg(feature = "transport_mqttac")]
 mod mqtt_async_client;
 
+#[cfg(feature = "transport_rumqttc")]
+mod rumqttc;
+
 #[cfg(feature = "transport_mqttac")]
 pub use mqtt_async_client::create_transport as create_mqtt_async_client_transport;
+
+#[cfg(feature = "transport_rumqttc")]
+pub use rumqttc::create_transport as create_rumqttc_transport;
 
 #[allow(unused)]
 pub use memory::create_transport as create_memory_transport;

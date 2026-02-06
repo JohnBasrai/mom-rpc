@@ -30,6 +30,9 @@ pub use transport::create_memory_transport;
 #[cfg(feature = "transport_mqttac")]
 pub use transport::create_mqtt_async_client_transport;
 
+#[cfg(feature = "transport_rumqttc")]
+pub use transport::create_rumqttc_transport;
+
 // --- public re-exports
 pub use domain::{
     //
@@ -45,16 +48,23 @@ pub use domain::{
 
 pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
-    #[cfg(feature = "transport_mqttac")]
+    #[cfg(feature = "transport_rumqttc")]
     {
-        create_mqtt_async_client_transport(config).await
+        return create_rumqttc_transport(config).await;
     }
 
-    // Future transport impls go here
-
-    #[cfg(all(not(feature = "transport_mqttac"), not(feature = "transport_acme")))]
+    #[cfg(all(feature = "transport_mqttac", not(feature = "transport_rumqttc")))]
     {
-        // Fallback / default
+        return create_mqtt_async_client_transport(config).await;
+    }
+
+    // Fallback / default
+    #[cfg(all(
+        not(feature = "transport_mqttac"),
+        not(feature = "transport_rumqttc"),
+        not(feature = "transport_acme")
+    ))]
+    {
         create_memory_transport(config).await
     }
 }

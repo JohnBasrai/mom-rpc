@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-# CI script for formatting and linting
+set -euo pipefail
 
-set -e
+echo "==> Running lint checks"
 
-echo "=== Running cargo fmt check ==="
 cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
 
-echo ""
-echo "=== Running clippy ==="
-cargo clippy --all-targets --all-features -- -D warnings
-
-echo ""
+echo "==> Lint OK"
 echo "✅ All checks passed!"

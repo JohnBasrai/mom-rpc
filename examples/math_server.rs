@@ -25,11 +25,12 @@ struct AddResponse {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ---
+    env_logger::init();
     let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-server");
 
     let transport = create_transport(&config).await?;
 
-    let server = RpcServer::new(transport.clone(), "math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
 
     server.register("add", |req: AddRequest| async move {
         Ok(AddResponse { sum: req.a + req.b })

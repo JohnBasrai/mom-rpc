@@ -64,7 +64,7 @@ struct Inner {
 
 impl RpcServer {
     // ---
-    pub fn new(transport: TransportPtr, node_id: String) -> Self {
+    pub fn with_transport(transport: TransportPtr, node_id: String) -> Self {
         // ---
         Self {
             inner: Arc::new(Inner {
@@ -91,7 +91,7 @@ impl RpcServer {
     /// # async fn example() -> anyhow::Result<()> {
     /// let config = RpcConfig::memory("server");
     /// let transport = create_memory_transport(&config).await?;
-    /// let server = RpcServer::new(transport.clone(), "my-service".to_owned());
+    /// let server = RpcServer::with_transport(transport.clone(), "my-service".to_owned());
     ///
     /// // Setup signal handling
     /// let server_clone = server.clone();
@@ -137,7 +137,7 @@ impl RpcServer {
     /// # async fn example() -> anyhow::Result<()> {
     /// let config = RpcConfig::memory("server");
     /// let transport = create_memory_transport(&config).await?;
-    /// let server = RpcServer::new(transport.clone(), "my-service".to_owned());
+    /// let server = RpcServer::with_transport(transport.clone(), "my-service".to_owned());
     ///
     /// // Spawn server in background
     /// let handle = server.spawn();
@@ -173,7 +173,7 @@ impl RpcServer {
     /// # async fn example() -> anyhow::Result<()> {
     /// let config = RpcConfig::memory("server");
     /// let transport = create_memory_transport(&config).await?;
-    /// let server = RpcServer::new(transport.clone(), "my-service".to_owned());
+    /// let server = RpcServer::with_transport(transport.clone(), "my-service".to_owned());
     ///
     /// let handle = server.spawn();
     ///
