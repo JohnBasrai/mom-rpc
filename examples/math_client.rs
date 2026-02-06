@@ -1,12 +1,12 @@
 //! Math RPC client example.
 //!
 //! NOTE:
-//! This example is intended for brokered transports (MQTT, RabbitMQ, etc).
+//! This example is intended for brokered transports (MQTT).
 //! It cannot be used with MemoryTransport, which is in-process only.
 //!
-//! Run with: cargo run --example math_client
+//! Run with: cargo run --example math_client --features transport_rumqttc
 //!
-//! Requires: a broker to be running
+//! Requires: an MQTT broker running on localhost:1883
 
 use mom_rpc::{create_transport, RpcClient, RpcConfig};
 use serde::{Deserialize, Serialize};

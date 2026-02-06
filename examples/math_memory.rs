@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
 
     server.register("add", |req: AddRequest| async move {
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
         Ok(AddResponse { sum: req.a + req.b })
     });
 

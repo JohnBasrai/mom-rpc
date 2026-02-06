@@ -93,12 +93,11 @@ pub struct Envelope {
     /// delivery. It must not encode RPC method semantics.
     pub address: Address,
 
-    /// Optional RPC method name.
+    /// Method name for routing to handlers.
     ///
-    /// This field is present for RPC request envelopes and is used by the
-    /// server to select the appropriate handler. Response envelopes do not
-    /// include a method. This field MUST be `Some` for RPC request envelopes.
-    /// It is always `None` for response envelopes.
+    /// This field MUST be `Some` for RPC request envelopes where method dispatch is
+    /// required. For broadcast or pub/sub patterns that don't use method routing,
+    /// this field MAY be None. It is always `None` for response envelopes.
     pub method: Option<Arc<str>>,
 
     /// Opaque payload bytes.
@@ -116,7 +115,10 @@ pub struct Envelope {
     /// address by the server.
     pub reply_to: Option<Address>,
 
-    /// Optional content type metadata.
+    /// Optional content type metadata (e.g., "application/json").
+    ///
+    /// This field is informational and not enforced by the RPC layer.
+    /// Transports and handlers may use this for serialization decisions.
     pub content_type: Option<Arc<str>>,
 }
 
@@ -182,7 +184,15 @@ pub struct PublishOptions {
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct SubscribeOptions {
-    /// Whether the subscription should be treated as durable.
+    // ---
+    /// Whether this subscription should persist across disconnections.
+    ///
+    /// When `true`, the broker maintains the subscription and queues messages
+    /// even when the transport disconnects. When `false`, subscriptions are
+    /// dropped on disconnect.
+    ///
+    /// **Note:** Durable subscriptions currently have no explicit cleanup
+    /// mechanism. See issue #5 for adding `unsubscribe()` support.
     pub durable: bool,
 }
 
@@ -192,7 +202,8 @@ pub struct SubscribeOptions {
 /// Transport implementations may use this as a signal to unregister the
 /// subscription.
 pub struct SubscriptionHandle {
-    /// Inbox for receiving delivered envelopes.
+    // ---
+    /// Receiver channel for delivered envelopes matching this subscription.
     pub inbox: mpsc::Receiver<Envelope>,
 }
 
@@ -201,7 +212,7 @@ pub struct SubscriptionHandle {
 /// A `Transport` provides best-effort delivery of message envelopes between
 /// producers and subscribers, with stronger semantics provided by higher
 /// layers. It defines the minimal contract required by higher-level layers
-/// without committing to any specific protocol or broker. Next higer-level
+/// without committing to any specific protocol or broker. Next higher-level
 /// provides correlation, retries, timeouts.
 ///
 /// Implementations must ensure that:
@@ -213,6 +224,17 @@ pub struct SubscriptionHandle {
 ///
 /// The in-memory transport serves as the reference implementation of these
 /// semantics.
+///
+/// # Available Implementations
+///
+/// - [`crate::create_memory_transport`] - In-memory transport (always available)
+/// - [`crate::create_transport`] - Creates a transport based on the enabled features.
+///
+/// # Notes
+///
+/// This trait uses `async_trait`; the expanded documentation may show explicit
+/// lifetimes and a boxed `Future`. This is an implementation detail — consumers
+/// should treat methods as normal `async fn`s.
 #[async_trait::async_trait]
 #[allow(dead_code)]
 pub trait Transport: Send + Sync {

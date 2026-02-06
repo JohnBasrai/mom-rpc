@@ -30,6 +30,8 @@ pub enum Error {
     Transport,
 
     /// No handler was registered for the requested method.
+    ///
+    /// The contained `String` is the method name that was requested.
     #[error("handler not found for method: {0}")]
     HandlerNotFound(String),
 
@@ -42,7 +44,7 @@ pub enum Error {
     #[error("invalid request")]
     InvalidRequest,
 
-    /// A request was missing a response address or reply-to field.
+    /// A request was missing a response address or `reply-to` field.
     #[error("missing response topic")]
     MissingResponseTopic,
 }
