@@ -3,11 +3,13 @@ name = "mom-rpc"
 version = "0.3.0"
 edition = "2021"
 authors = ["John Basrai"]
-description = "RPC semantics over MQTT pub/sub with request/response correlation"
+description = "Transport-agnostic async RPC over message-oriented middleware (MQTT, in-memory)"
 license = "MIT"
 repository = "https://github.com/JohnBasrai/mom-rpc"
-keywords = ["middleware", "pubsub", "rpc", "iot", "async", "messaging"]
+keywords = ["pubsub", "rpc", "iot", "async"]
 categories = ["network-programming", "asynchronous"]
+readme = "README.md"
+documentation = "https://docs.rs/mom-rpc"
 
 [dependencies]
 anyhow            = "1.0"
@@ -41,4 +43,3 @@ default = ["logging"]
 logging = ["log"]
 transport_mqttac = ["mqtt-async-client"]
 transport_rumqttc = ["rumqttc"]
-transport_acme = []

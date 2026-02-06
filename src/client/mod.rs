@@ -74,8 +74,13 @@ impl RpcClient {
     /// Create a client with an explicitly provided transport.
     ///
     /// This is the constructor you want for tests and for advanced users.
-    pub async fn with_transport(transport: TransportPtr, node_id: String) -> Result<Self> {
+    pub async fn with_transport(
+        transport: TransportPtr,
+        node_id: impl Into<String>,
+    ) -> Result<Self> {
         // ---
+        let node_id = node_id.into();
+
         // Subscribe to responses for this node.
         //
         // NOTE: memory transport is exact-match, so do NOT use MQTT-style wildcards here.
@@ -147,7 +152,7 @@ impl RpcClient {
     pub async fn new(config: &super::RpcConfig, node_id: &str) -> Result<Self> {
         // ---
         let transport = crate::create_transport(config).await?;
-        Self::with_transport(transport, node_id.into()).await
+        Self::with_transport(transport, node_id).await
     }
 
     /// Send an RPC request to a target service node.

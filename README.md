@@ -1,3 +1,7 @@
+[![Crates.io](https://img.shields.io/crates/v/mom-rpc.svg)](https://crates.io/crates/mom-rpc)
+[![Documentation](https://docs.rs/mom-rpc/badge.svg)](https://docs.rs/mom-rpc)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 # mom-rpc
 
 **Transport-agnostic async RPC over message-oriented middleware.**
@@ -49,6 +53,188 @@ This crate solves that by providing:
 
 ---
 
+## Quick Start
+
+### In-Memory Transport (Testing)
+
+Perfect for testing and single-process applications - no broker required:
+
+```rust
+use mom_rpc::{create_transport, RpcClient, RpcConfig, RpcServer, Result};
+
+let config = RpcConfig::memory("math");
+let transport = create_transport(&config).await?;
+
+let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+server.register("add", |req: AddRequest| async move {
+    Ok(AddResponse { sum: req.a + req.b })
+});
+let _handle = server.spawn();
+
+let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3 }).await?;
+```
+
+<details>
+<summary><b>View complete example</b></summary>
+
+```rust
+use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AddRequest {
+    a: i32,
+    b: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AddResponse {
+    sum: i32,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let config = RpcConfig::memory("math");
+    let transport = create_transport(&config).await?;
+
+    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+
+    server.register("add", |req: AddRequest| async move {
+        Ok(AddResponse { sum: req.a + req.b })
+    });
+
+    let _handle = server.spawn();
+
+    let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+
+    let resp: AddResponse = client
+        .request_to("math", "add", AddRequest { a: 2, b: 3 })
+        .await?;
+
+    assert_eq!(resp.sum, 5);
+    Ok(())
+}
+```
+
+</details>
+
+**Run it:**
+```bash
+cargo run --example math_memory
+```
+
+### MQTT Transport (Production)
+
+For distributed deployments with an MQTT broker:
+
+**Cargo.toml:**
+```toml
+[dependencies]
+mom-rpc = { version = "0.3", features = ["transport_rumqttc"] }
+```
+
+**Basic usage:**
+```rust
+// Server
+let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-server");
+let transport = create_transport(&config).await?;
+let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+server.register("add", |req: AddRequest| async move { /* ... */ });
+server.run().await?;
+
+// Client
+let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-client");
+let transport = create_transport(&config).await?;
+let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3 }).await?;
+```
+
+<details>
+<summary><b>View complete server example</b></summary>
+
+```rust
+use mom_rpc::{create_transport, RpcConfig, RpcServer};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AddRequest { a: i32, b: i32 }
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AddResponse { sum: i32 }
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-server");
+    let transport = create_transport(&config).await?;
+
+    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+
+    server.register("add", |req: AddRequest| async move {
+        Ok(AddResponse { sum: req.a + req.b })
+    });
+
+    // Setup graceful shutdown
+    let server_clone = server.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl+C");
+        server_clone.shutdown().await.expect("shutdown failed");
+    });
+
+    server.run().await?;
+    transport.close().await?;
+    Ok(())
+}
+```
+
+</details>
+
+<details>
+<summary><b>View complete client example</b></summary>
+
+```rust
+use mom_rpc::{create_transport, RpcClient, RpcConfig};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AddRequest { a: i32, b: i32 }
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AddResponse { sum: i32 }
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-client");
+    let transport = create_transport(&config).await?;
+
+    let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+
+    let resp: AddResponse = client
+        .request_to("math", "add", AddRequest { a: 2, b: 3 })
+        .await?;
+
+    println!("2 + 3 = {}", resp.sum);
+    transport.close().await?;
+    Ok(())
+}
+```
+
+</details>
+
+**Run it:**
+```bash
+# Terminal 1: Start MQTT broker
+docker run -p 1883:1883 eclipse-mosquitto
+
+# Terminal 2: Start server
+cargo run --example math_server --features transport_rumqttc
+
+# Terminal 3: Send requests
+cargo run --example math_client --features transport_rumqttc
+```
+
+---
+
 ## Transports
 
 The crate includes a **memory transport** by default.
@@ -67,82 +253,102 @@ It does **not** model an external broker.
 Broker-backed transports (e.g. MQTT) are implemented behind feature flags and
 run out-of-process, with shared state managed by the broker itself.
 All transports conform to the same RPC contract and approximate the in-memory
-transport’s delivery semantics as closely as the underlying system allows.
+transport's delivery semantics as closely as the underlying system allows.
 
 ### Available brokered transports
 
-* **rumqttc (MQTT)** — enabled via the `transport_rumqttc` feature
-  Actor-based implementation with a single broker connection, lazy startup,
-  SUBACK-confirmed subscriptions, and topic-based fanout semantics.
+* **rumqttc (MQTT)** — 🌟 **Recommended MQTT backend**
+  
+  Enable via the `transport_rumqttc` feature. This implementation provides:
+  - Actor-based architecture with safe concurrency
+  - Lazy connection initialization
+  - SUBACK-confirmed subscriptions
+  - Active maintenance and modern async patterns
+  
+  ```toml
+  mom-rpc = { version = "0.3", features = ["transport_rumqttc"] }
+  ```
+
+* **mqtt-async-client** — ⚠️ **Deprecated**
+  
+  Legacy MQTT backend provided for backward compatibility only.
+  **This feature will be removed in v0.4.0.** Please migrate to `transport_rumqttc`.
+  
+  The mqtt-async-client dependency is unmaintained and pulls in older TLS libraries.
 
 Additional transports may be added in the future behind feature flags.
+
+### Transport Comparison
+
+| Feature | Memory | rumqttc | mqttac (deprecated) |
+|---------|--------|---------|---------------------|
+| **Broker Required** | ❌ No | ✅ Yes | ✅ Yes |
+| **Multi-Process** | ❌ No | ✅ Yes | ✅ Yes |
+| **Production Ready** | Testing only | ✅ Yes | ⚠️ Legacy |
+| **Maintenance** | ✅ Active | ✅ Active | ❌ Unmaintained |
+| **TLS Support** | N/A | ✅ Yes | ⚠️ Older stack |
+| **Use Case** | Testing, single-process | Production MQTT | Migration only |
+
+**Recommendation:** Use **memory** for testing, **rumqttc** for production.
 
 ---
 
 ## Feature flags
 
-* `transport_rumqttc` — Enable MQTT transport backed by `rumqttc`
-* `transport_mqttac` — Enable legacy MQTT transport based on `mqtt-async-client`
-* `logging` — Enable log-based diagnostics
+| Flag | Description | Status |
+|------|-------------|--------|
+| `transport_rumqttc` | MQTT via rumqttc | 🌟 **Recommended** |
+| `transport_mqttac` | Legacy MQTT via mqtt-async-client | ⚠️ **Deprecated** (v0.4.0) |
+| `logging` | Enable log output (uses `log` crate) | ✅ Default |
 
-The in-memory transport is always enabled and requires no feature flags.
+The **memory transport is always available** - no feature flag required.
+
+### Choosing Features
+
+**For production MQTT deployments:**
+```toml
+[dependencies]
+mom-rpc = { version = "0.3", features = ["transport_rumqttc"] }
+```
+
+**For testing without a broker:**
+```toml
+[dependencies]
+mom-rpc = "0.3"  # Memory transport included by default
+```
+
+**Migration from mqtt-async-client:**
+Simply change `transport_mqttac` to `transport_rumqttc` in your `Cargo.toml`.
+No code changes required.
+
+**Note:** If multiple transport features are enabled, `transport_rumqttc` takes
+priority, then `transport_mqttac`, then memory as fallback.
 
 ---
 
-## Example
+## Timeout Handling
 
-### Server
+The RPC layer does not impose timeouts. Use `tokio::time::timeout` to add them:
+
+<details>
+<summary><b>Show timeout example</b></summary>
 
 ```rust
-use mom_rpc::{create_transport, RpcConfig, RpcServer, Result};
+use tokio::time::{timeout, Duration};
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let config = RpcConfig::memory("math-server");
-    let transport = create_transport(&config).await?;
+let result = timeout(
+    Duration::from_secs(5),
+    client.request_to("service", "method", request)
+).await;
 
-    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
-
-    server.register("add", |req: AddRequest| async move {
-        Ok(AddResponse { sum: req.a + req.b })
-    });
-
-    let server_clone = server.clone();
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl+C");
-        server_clone.shutdown().await.expect("shutdown failed");
-    });
-
-    server.run().await?;
-    transport.close().await?;
-    Ok(())
+match result {
+    Ok(Ok(response)) => { /* success */ }
+    Ok(Err(e)) => { /* RPC error */ }
+    Err(_) => { /* timeout */ }
 }
 ```
 
-### Client
-
-```rust
-use mom_rpc::{create_transport, RpcClient, RpcConfig, Result};
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let config = RpcConfig::memory("math-client");
-    let transport = create_transport(&config).await?;
-
-    let client =
-        RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
-
-    let resp: AddResponse = client
-        .request_to("math", "add", AddRequest { a: 2, b: 3 })
-        .await?;
-
-    assert_eq!(resp.sum, 5);
-    transport.close().await?;
-    Ok(())
-}
-```
-
-**Note:** For complete working code, see `examples/math_memory.rs`.
+</details>
 
 ---
 
@@ -172,22 +378,52 @@ For details, see `docs/architecture.md`.
 
 ---
 
-## Security note
+## Security
 
-The `rumqttc` transport does not embed TLS policy or broker security concerns into the RPC layer.
+The `rumqttc` transport supports TLS but delegates certificate validation and
+connection security to the broker. Transport security is intentionally treated 
+as an external concern to avoid coupling RPC semantics to cryptographic policy.
 
-Production deployments should:
+<details>
+<summary><b>Security best practices</b></summary>
 
-* terminate TLS at the broker (recommended), or
-* use broker-side authentication and authorization mechanisms
+### TLS/SSL
 
-Transport security is intentionally treated as an external concern to avoid coupling RPC semantics to cryptographic policy or client library lifecycles.
+For production deployments:
+
+* Use TLS-enabled brokers (port 8883)
+* Configure broker authentication (username/password, certificates)
+* Terminate TLS at the broker or use mTLS
+
+### Authentication
+
+This library does not handle authentication. Delegate to:
+
+* Broker-level auth (username/password, client certificates)
+* Network-level security (VPN, firewall rules)
+* Message-level encryption (application responsibility)
+
+</details>
 
 > **Note:** The legacy `transport_mqttac` feature is optional and disabled by default. It pulls in an older TLS stack via upstream dependencies and is not included in builds unless explicitly enabled. The recommended MQTT transport is `transport_rumqttc`.
+
+---
+
+## Documentation
+
+* [API Documentation](https://docs.rs/mom-rpc) - Complete API reference on docs.rs
+* [Architecture](docs/architecture.md) - Design patterns and module structure
+* [Contributing](CONTRIBUTING.md) - Development guide and standards
 
 ---
 
 ## Status
 
 * Early development / API unstable
-* Feedback welcome
+* Feedback welcome via [GitHub issues](https://github.com/JohnBasrai/mom-rpc/issues)
+
+---
+
+## License
+
+MIT

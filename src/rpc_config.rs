@@ -4,17 +4,17 @@
 //! (e.g. MQTT client options). Transport layers are responsible for
 //! interpreting this config into concrete connection settings.
 
+/// Transport configuration and connection parameters.
 #[derive(Debug, Clone)]
 pub struct RpcConfig {
-    /// Broker address, e.g. `mqtt://localhost:1883`
+    // ---
+    /// Broker connection URL, e.g. `mqtt://localhost:1883`
     pub broker_addr: String,
 
-    /// Keep-alive interval in seconds.
-    ///
-    /// If `None`, a sensible transport default is used.
+    /// Broker connection keep-alive interval in seconds (0 to disable).
     pub keep_alive_secs: Option<u16>,
 
-    /// The transport_id used by the transport end point.
+    /// Unique identifier for this transport instance, used for logging.
     pub transport_id: String,
 }
 
