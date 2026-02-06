@@ -15,6 +15,7 @@ struct AddResponse {
 #[tokio::main]
 async fn main() -> Result<()> {
     // ---
+    env_logger::init();
     let config = RpcConfig::memory("math");
 
     let transport = create_transport(&config).await?;

@@ -70,6 +70,7 @@ use rumqttc::{
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::task::JoinHandle;
@@ -87,6 +88,8 @@ use crate::{
     Transport,
     TransportPtr,
 };
+
+const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
 //
 // Logging macros (transport-local for now; intended to be shared later)
@@ -219,9 +222,10 @@ impl RumqttcTransport {
             cmd_rx,
             subscribers: Arc::clone(&subscribers),
             pending_subscribe,
+            reconnect: false,
         };
 
-        let handle = tokio::task::spawn_local(actor.run());
+        let handle = tokio::task::spawn(actor.run());
         let tasks_clone = Arc::clone(&tasks);
 
         tokio::spawn(async move {
@@ -245,6 +249,7 @@ struct MqttActor {
     cmd_rx: mpsc::Receiver<Cmd>,
     subscribers: SubscriberMap,
     pending_subscribe: PendingSubscribe,
+    reconnect: bool,
 }
 
 impl MqttActor {
@@ -279,17 +284,37 @@ impl MqttActor {
                             Self::handle_suback(pending_subscribe, transport_id, suback).await;
                         }
                         Ok(Event::Incoming(Packet::ConnAck(connack))) => {
-                            self.handle_connack(connack).await;
+                            self.handle_connack(connack); // not async
+
+                            if self.reconnect {
+                                let topics: Vec<String> = {
+                                    let map = self.subscribers.read().await;
+                                    map.keys().cloned().collect()
+                                };
+
+                                for topic in topics {
+                                    if let Err(err) = self.client.subscribe(&topic, QoS::AtMostOnce).await {
+                                        log_error!("{}: resubscribe failed for {topic}: {err}", self.transport_id);
+                                    } else {
+                                        log_info!("{}: resubscribed to {topic}", self.transport_id);
+                                    }
+                                }
+                            }
                         }
                         Ok(_event) => {
                             // Other events (PingResp, PubAck, etc.) - ignore
-                            log_debug!("{}: received mqtt event (ignored)", self.transport_id);
+                            log_debug!("{}: received mqtt event (ignored):{:?}",
+                                       self.transport_id, _event);
                         }
-                        Err(_err) => {
-                            log_error!(
-                                "{}: error polling event loop: {_err}",
-                                self.transport_id
-                            );
+                        Err(err) => {
+                            if is_disconnect(&err) {
+                                self.reconnect = true;
+                                log_error!("{}: broker disconnected: {err}", self.transport_id);
+                            } else {
+                                log_error!("{}: mqtt error: {err}", self.transport_id);
+                            }
+                            tokio::time::sleep(RECONNECT_DELAY).await;
+                            continue;
                         }
                     }
                 }
@@ -382,7 +407,8 @@ impl MqttActor {
 
         let mut pending = pending_subscribe.write().await;
         let Some((topic, responder)) = pending.take() else {
-            log_error!("{transport_id}: received unexpected SUBACK");
+            // This is a reconnect re-subscribe SUBACK — ignore
+            log_debug!("{transport_id}: SUBACK received for reconnect re-subscribe");
             return;
         };
 
@@ -410,7 +436,7 @@ impl MqttActor {
     /// Logs connection success at info level or failure at error level.
     /// Connection failures are always visible (via eprintln if logging disabled)
     /// since they are critical for debugging.
-    async fn handle_connack(&self, connack: rumqttc::ConnAck) {
+    fn handle_connack(&self, connack: rumqttc::ConnAck) {
         // ---
 
         if connack.code == ConnectReturnCode::Success {
@@ -440,7 +466,7 @@ impl MqttActor {
     /// Deserializes the envelope, looks up matching subscribers, and delivers the
     /// message to all live subscribers. Dead or slow subscribers are automatically
     /// evicted during delivery.
-    async fn handle_incoming(transport_id: String, subscribers: SubscriberMap, publish: Publish) {
+    async fn handle_incoming(_transport_id: String, subscribers: SubscriberMap, publish: Publish) {
         // ---
 
         let topic = publish.topic.clone();
@@ -451,7 +477,7 @@ impl MqttActor {
             Err(_err) => {
                 log_debug!(
                     "{}: invalid envelope on topic {topic}: {_err}",
-                    transport_id
+                    _transport_id
                 );
                 return;
             }
@@ -491,6 +517,14 @@ impl MqttActor {
             map.insert(topic, survivors);
         }
     }
+} // MqttActor
+
+fn is_disconnect(err: &rumqttc::ConnectionError) -> bool {
+    // ---
+    matches!(
+        err,
+        rumqttc::ConnectionError::Io(_) | rumqttc::ConnectionError::MqttState(_)
+    )
 }
 
 #[async_trait::async_trait]

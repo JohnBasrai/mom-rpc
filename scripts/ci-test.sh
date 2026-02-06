@@ -19,8 +19,13 @@ echo "=== Testing with transport_mqttac only ==="
 cargo test --all-targets --no-default-features --features transport_mqttac
 
 echo ""
+echo "=== Testing with transport_rumqttc only ==="
+cargo test --all-targets --no-default-features --features transport_rumqttc
+
+
+echo ""
 echo "=== Building examples ==="
-cargo build --examples --all-features
+cargo build --examples --features transport_rumqttc
 
 echo ""
 echo "=== Running doc tests ==="
