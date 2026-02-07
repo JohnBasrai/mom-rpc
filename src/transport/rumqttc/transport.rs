@@ -332,24 +332,26 @@ impl MqttActor {
 
         let payload = match serde_json::to_vec(&env) {
             Ok(p) => p,
-            Err(_err) => {
-                log_error!(
-                    "{}: failed to serialize publish payload: {_err}",
+            Err(err) => {
+                let msg = format!(
+                    "{}: failed to serialize publish payload: {err}",
                     self.transport_id
                 );
-                return Err(RpcError::Transport);
+                log_error!("{msg}");
+                return Err(RpcError::Transport(msg));
             }
         };
 
         self.client
             .publish(topic, QoS::AtMostOnce, false, payload)
             .await
-            .map_err(|_err| {
-                log_error!(
-                    "{}: publish failed for topic {topic}: {_err}",
+            .map_err(|err| {
+                let msg = format!(
+                    "{}: publish failed for topic {topic}: {err}",
                     self.transport_id
                 );
-                RpcError::Transport
+                log_error!("{msg}");
+                RpcError::Transport(msg)
             })
     }
 
@@ -368,26 +370,30 @@ impl MqttActor {
         {
             let mut pending = self.pending_subscribe.write().await;
             if pending.is_some() {
-                log_error!(
+                let msg = format!(
                     "{}: attempted concurrent subscribe while one is pending",
-                    self.transport_id
+                    self.transport_id,
                 );
-                let _ = resp.send(Err(RpcError::Transport));
+                log_error!("{msg}");
+                let _ = resp.send(Err(RpcError::Transport(msg)));
                 return;
             }
             *pending = Some((topic.clone(), resp));
         }
 
         // Send subscribe request to broker
-        if let Err(_err) = self.client.subscribe(&topic, QoS::AtMostOnce).await {
+        if let Err(err) = self.client.subscribe(&topic, QoS::AtMostOnce).await {
+            // ---
             // Remove from pending on immediate error
             let mut pending = self.pending_subscribe.write().await;
-            if let Some((_topic, responder)) = pending.take() {
-                log_error!(
-                    "{}: failed to send subscribe for topic {topic}: {_err}",
+
+            if let Some((topic, responder)) = pending.take() {
+                let msg = format!(
+                    "{}: failed to send subscribe for topic {topic}: {err}",
                     self.transport_id
                 );
-                let _ = responder.send(Err(RpcError::Transport));
+                log_error!("{msg}");
+                let _ = responder.send(Err(RpcError::Transport(msg)));
             }
         }
 
@@ -423,11 +429,12 @@ impl MqttActor {
             log_info!("{transport_id}: successfully subscribed to topic {topic}");
             let _ = responder.send(Ok(()));
         } else {
-            log_error!(
+            let msg = format!(
                 "{transport_id}: subscription failed for topic {topic}: {:?}",
                 suback.return_codes
             );
-            let _ = responder.send(Err(RpcError::Transport));
+            log_error!("{msg}");
+            let _ = responder.send(Err(RpcError::Transport(msg)));
         }
     }
 
@@ -544,9 +551,15 @@ impl Transport for RumqttcTransport {
         self.cmd_tx
             .send(Cmd::Publish { env, resp: tx })
             .await
-            .map_err(|_| RpcError::Transport)?;
+            .map_err(|e| {
+                let msg = format!("actor command channel closed:{e}");
+                RpcError::Transport(msg)
+            })?;
 
-        rx.await.map_err(|_| RpcError::Transport)?
+        rx.await.map_err(|e| {
+            let msg = format!("actor responder channel read failed:{e}");
+            RpcError::Transport(msg)
+        })?
     }
 
     async fn subscribe(
@@ -572,9 +585,15 @@ impl Transport for RumqttcTransport {
                 resp: resp_tx,
             })
             .await
-            .map_err(|_| RpcError::Transport)?;
+            .map_err(|e| {
+                let msg = format!("actor command channel closed:{e}");
+                RpcError::Transport(msg)
+            })?;
 
-        resp_rx.await.map_err(|_| RpcError::Transport)??;
+        resp_rx.await.map_err(|e| {
+            let msg = format!("actor resp_rx channel read failed:{e}");
+            RpcError::Transport(msg)
+        })??;
 
         Ok(SubscriptionHandle { inbox: rx })
     }
@@ -634,12 +653,10 @@ fn create_mqtt_client(config: &RpcConfig) -> Result<(AsyncClient, EventLoop)> {
     let (host, port) = match url.split_once(':') {
         Some((h, p)) => (
             h,
-            p.parse().map_err(|_err| {
-                log_error!(
-                    "rumqttc: invalid port in broker URL {}: {_err}",
-                    broker_addr
-                );
-                RpcError::Transport
+            p.parse().map_err(|err| {
+                let msg = format!("rumqttc: invalid port in broker URL {broker_addr}: {err}");
+                log_error!("{msg}");
+                RpcError::Transport(msg)
             })?,
         ),
         None => (url, 1883),
