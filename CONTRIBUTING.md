@@ -47,8 +47,6 @@ We follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Semantic
 - **Full CI check:** `./scripts/local-test.sh`
 - **Documentation:** `cargo doc --open`
 
----
-
 ## For Maintainers
 
 **Publishing a release:**
@@ -56,8 +54,6 @@ We follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Semantic
 2. Run `./scripts/pre-publish.sh` to verify packaging
 3. Run `cargo publish --registry crates-io`
 4. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`
-
----
 
 ## Questions?
 

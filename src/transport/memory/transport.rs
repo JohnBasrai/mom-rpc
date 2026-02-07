@@ -84,7 +84,7 @@ impl Transport for MemoryTransport {
                         Ok(_) => {}
                         Err(_err) => {
                             #[cfg(feature = "logging")]
-                            log::info!("publish error {:?}", _err);
+                            log::info!("publish error {_err:?}");
                         }
                     }
                 }

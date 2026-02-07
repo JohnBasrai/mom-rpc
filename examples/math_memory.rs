@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
 
     let transport = create_transport(&config).await?;
 
-    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "math");
 
     server.register("add", |req: AddRequest| async move {
         tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
 
     let _handle = server.spawn();
 
-    let client = RpcClient::with_transport(transport.clone(), "Roxy".to_string()).await?;
+    let client = RpcClient::with_transport(transport.clone(), "Roxy").await?;
 
     let resp: AddResponse = client
         .request_to("math", "add", AddRequest { a: 20, b: 3 })

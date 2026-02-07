@@ -385,7 +385,7 @@ Transport concerns (addresses, correlation, reply topics) are handled by the ser
 
 ## Error Handling
 
-This crate uses a **typed error model** (`crate::error::Error`) exclusively.
+This crate uses a **typed error model** (`crate::error::RpcError`) exclusively.
 
 * `anyhow` is not used
 * Transport-specific errors are mapped at boundaries

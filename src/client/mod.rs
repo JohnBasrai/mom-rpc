@@ -16,9 +16,9 @@ use crate::{
     // ---
     Address,
     Envelope,
-    Error,
     PublishOptions,
     Result,
+    RpcError,
     SubscribeOptions,
     Subscription,
     TransportPtr,
@@ -208,11 +208,8 @@ impl RpcClient {
 
         let response = rx.await.map_err(|_err| {
             #[cfg(feature = "logging")]
-            log::warn!(
-                "response channel closed (server dropped or transport shutdown:{:?})",
-                _err
-            );
-            Error::Transport
+            log::warn!("response channel closed (server dropped or transport shutdown:{_err:?})");
+            RpcError::Transport
         })?;
         let resp: TResp = serde_json::from_slice(&response)?;
         Ok(resp)
@@ -250,7 +247,7 @@ impl RpcClient {
             return Ok(());
         }
 
-        let correlation_id = env.correlation_id.ok_or(Error::InvalidResponse)?;
+        let correlation_id = env.correlation_id.ok_or(RpcError::InvalidResponse)?;
 
         self.handle_response(correlation_id, env.payload)
     }

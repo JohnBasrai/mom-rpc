@@ -5,10 +5,10 @@ use tokio::task::JoinHandle;
 use mom_rpc::{
     //
     create_memory_transport,
-    Error,
     Result,
     RpcClient,
     RpcConfig,
+    RpcError,
     RpcServer,
     TransportPtr,
 };
@@ -47,7 +47,7 @@ impl MathServer {
         let config = RpcConfig::memory(id);
         let transport = create_memory_transport(&config).await?;
         // Use test-specific node_id to avoid subscription conflicts
-        let node_id = format!("math-{}", id);
+        let node_id = format!("math-{id}");
         let server = RpcServer::with_transport(transport.clone(), node_id.clone());
 
         server.register("add", |req: AddRequest| async move {
@@ -101,7 +101,7 @@ async fn test_basic_request() -> Result<()> {
     let server = MathServer::new("test_basic_request").await?;
     log_info!("after MathServer::new");
 
-    let client = RpcClient::with_transport(server.transport(), "Sally".to_string()).await?;
+    let client = RpcClient::with_transport(server.transport(), "Sally").await?;
     log_info!("after RpcClient::new");
 
     log_info!("sending math add 2 3...");
@@ -125,7 +125,7 @@ async fn test_concurrent_requests() {
     init_logging();
 
     let server = MathServer::new("test_concurrent_requests").await.unwrap();
-    let client = RpcClient::with_transport(server.transport(), "George".to_string())
+    let client = RpcClient::with_transport(server.transport(), "George")
         .await
         .unwrap();
 
@@ -161,7 +161,7 @@ async fn test_timeout() -> Result<()> {
 
     let config = RpcConfig::memory("test_timeout");
     let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "lazy-math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "lazy-math");
 
     server.register("add", |req: AddRequest| async move {
         tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -173,7 +173,7 @@ async fn test_timeout() -> Result<()> {
     // Give the server task time to subscribe
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let client = RpcClient::with_transport(transport.clone(), "Denis".to_string()).await?;
+    let client = RpcClient::with_transport(transport.clone(), "Denis").await?;
 
     log_info!("test_timeout: sending 1 + 1");
 
@@ -206,11 +206,11 @@ async fn test_error_response() -> Result<()> {
 
     let config = RpcConfig::memory("test_error");
     let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "error-math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "error-math");
 
     server.register("divide", |req: AddRequest| async move {
         if req.b == 0 {
-            return Err(Error::InvalidRequest);
+            return Err(RpcError::InvalidRequest);
         }
         Ok(AddResponse { sum: req.a / req.b })
     });
@@ -218,7 +218,7 @@ async fn test_error_response() -> Result<()> {
     let handle = server.spawn();
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let client = RpcClient::with_transport(transport.clone(), "error-client".to_string()).await?;
+    let client = RpcClient::with_transport(transport.clone(), "error-client").await?;
 
     // Test error case
     let result: Result<AddResponse> = client
@@ -245,7 +245,7 @@ async fn test_multiple_clients() -> Result<()> {
 
     let config = RpcConfig::memory("test_multi_client");
     let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "multi-math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "multi-math");
 
     server.register("add", |req: AddRequest| async move {
         Ok(AddResponse { sum: req.a + req.b })
@@ -255,9 +255,9 @@ async fn test_multiple_clients() -> Result<()> {
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
     // Create 3 separate clients
-    let client1 = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
-    let client2 = RpcClient::with_transport(transport.clone(), "client-2".to_string()).await?;
-    let client3 = RpcClient::with_transport(transport.clone(), "client-3".to_string()).await?;
+    let client1 = RpcClient::with_transport(transport.clone(), "client-1").await?;
+    let client2 = RpcClient::with_transport(transport.clone(), "client-2").await?;
+    let client3 = RpcClient::with_transport(transport.clone(), "client-3").await?;
 
     // All clients make requests concurrently
     let (r1, r2, r3) = tokio::join!(
@@ -296,7 +296,7 @@ async fn test_transport_disconnect() -> Result<()> {
 
     let config = RpcConfig::memory("test_disconnect");
     let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "disconnect-math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "disconnect-math");
 
     server.register("add", |req: AddRequest| async move {
         // Slow handler to ensure request is in-flight
@@ -307,8 +307,7 @@ async fn test_transport_disconnect() -> Result<()> {
     let handle = server.spawn();
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let client =
-        RpcClient::with_transport(transport.clone(), "disconnect-client".to_string()).await?;
+    let client = RpcClient::with_transport(transport.clone(), "disconnect-client").await?;
 
     // Start request
     let fut = client.request_to::<AddRequest, AddResponse>(

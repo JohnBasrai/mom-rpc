@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::{Result, RpcError};
 use bytes::Bytes;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -19,7 +19,7 @@ pub(super) type BoxedHandler =
 /// types in the same HashMap, while centralizing serialization logic.
 ///
 /// Typed handlers operate on deserialized request values and return typed
-/// response values. Serialization errors are surfaced as `Error::Serialization`.
+/// response values. Serialization errors are surfaced as `RpcError::Serialization`.
 pub(super) fn wrap_handler<F, Fut, Req, Resp>(handler: F) -> BoxedHandler
 where
     F: Fn(Req) -> Fut + Send + Sync + Clone + 'static,
@@ -34,13 +34,13 @@ where
         let fut = Box::pin(async move {
             // ---
             // Deserialize request payload
-            let req: Req = serde_json::from_slice(&bytes).map_err(Error::from)?;
+            let req: Req = serde_json::from_slice(&bytes).map_err(RpcError::from)?;
 
             // Execute typed handler
             let resp: Resp = handler(req).await?;
 
             // Serialize response payload
-            let resp_bytes = serde_json::to_vec(&resp).map_err(Error::from)?;
+            let resp_bytes = serde_json::to_vec(&resp).map_err(RpcError::from)?;
 
             Ok(Bytes::from(resp_bytes))
         });

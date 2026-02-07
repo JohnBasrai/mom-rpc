@@ -258,5 +258,10 @@ pub trait Transport: Send + Sync {
 
 /// Shared transport pointer.
 ///
+/// This is an `Arc<dyn Transport>`, which means:
+/// - `.clone()` is cheap (only increments a reference count)
+/// - Multiple clones share the same underlying connection
+/// - Safe to share between `RpcClient` and `RpcServer`
+///
 /// Used to erase concrete transport types behind a stable domain interface.
 pub type TransportPtr = Arc<dyn Transport>;

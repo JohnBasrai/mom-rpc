@@ -14,9 +14,9 @@ use super::{
     // ---
     Address,
     Envelope,
-    Error,
     PublishOptions,
     Result,
+    RpcError,
     Subscription,
     TransportPtr,
 };
@@ -266,7 +266,7 @@ impl RpcServer {
             handlers.get(method).cloned()
         };
 
-        let handler = handler.ok_or_else(|| Error::HandlerNotFound(method.to_string()))?;
+        let handler = handler.ok_or_else(|| RpcError::HandlerNotFound(method.to_string()))?;
 
         // Return response payload or an error
         handler(bytes).await
@@ -311,11 +311,11 @@ impl RpcServer {
 
     async fn handle_envelope(&self, env: Envelope) -> Result<()> {
         // ---
-        let method = env.method.as_deref().ok_or(Error::InvalidRequest)?;
+        let method = env.method.as_deref().ok_or(RpcError::InvalidRequest)?;
 
-        let reply_to = env.reply_to.ok_or(Error::MissingResponseTopic)?;
+        let reply_to = env.reply_to.ok_or(RpcError::MissingResponseTopic)?;
 
-        let correlation_id = env.correlation_id.ok_or(Error::InvalidRequest)?;
+        let correlation_id = env.correlation_id.ok_or(RpcError::InvalidRequest)?;
 
         let response_payload = self.dispatch_request(method, env.payload).await?;
 
