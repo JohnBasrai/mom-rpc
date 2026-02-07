@@ -12,9 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get pre-installed rust version
-        run: rustc --version
-
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -35,7 +32,6 @@ jobs:
         feature:
           - default
           - transport_rumqttc
-          - transport_mqttac
           - no-default-features
           - all-features
 

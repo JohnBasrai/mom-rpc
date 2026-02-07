@@ -8,7 +8,6 @@
 //!
 //! - **Memory** (default) - In-process testing transport, always available
 //! - **MQTT via rumqttc** - Recommended MQTT backend (enable `transport_rumqttc`)
-//! - **MQTT via mqtt-async-client** - Legacy backend (enable `transport_mqttac`, deprecated)
 //!
 //! # Quick Start
 //!
@@ -44,7 +43,6 @@
 //! # Feature Flags
 //!
 //! - `transport_rumqttc` - MQTT via rumqttc (recommended for production)
-//! - `transport_mqttac` - Legacy MQTT (deprecated, will be removed in v0.4.0)
 //! - `logging` - Enable log output (enabled by default)
 //!
 //! # Examples
@@ -80,17 +78,6 @@ pub use error::{Result, RpcError};
 /// external resources.
 pub use transport::create_memory_transport;
 
-/// Legacy MQTT transport.
-///
-/// **Deprecated:** Use `create_rumqttc_transport` instead.
-/// This feature will be removed in `v0.4.0`.
-#[cfg(feature = "transport_mqttac")]
-#[deprecated(
-    since = "0.3.0",
-    note = "Use transport_rumqttc feature instead. This will be removed in `v0.4.0`"
-)]
-pub use transport::create_mqtt_async_client_transport;
-
 #[cfg(feature = "transport_rumqttc")]
 pub use transport::create_rumqttc_transport;
 
@@ -113,8 +100,7 @@ pub use domain::{
 /// transport implementation based on feature flags with the following priority:
 ///
 /// 1. `transport_rumqttc` - MQTT via rumqttc (recommended)
-/// 2. `transport_mqttac` - Legacy MQTT (deprecated)
-/// 3. Default - In-memory transport
+/// 2. Default - In-memory transport
 ///
 /// If multiple transport features are enabled, rumqttc takes precedence.
 ///
@@ -149,13 +135,8 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
         return create_rumqttc_transport(config).await;
     }
 
-    #[cfg(all(feature = "transport_mqttac", not(feature = "transport_rumqttc")))]
-    {
-        return create_mqtt_async_client_transport(config).await;
-    }
-
     // Fallback / default
-    #[cfg(all(not(feature = "transport_mqttac"), not(feature = "transport_rumqttc")))]
+    #[cfg(not(feature = "transport_rumqttc"))]
     {
         create_memory_transport(config).await
     }

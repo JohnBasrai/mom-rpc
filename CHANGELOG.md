@@ -15,6 +15,10 @@ Early versions may include intentional refactors as semantics are clarified.
   - Update imports: `use mom_rpc::Error` → `use mom_rpc::RpcError`
   - The `Result<T>` type alias remains unchanged and now uses `RpcError` internally
 
+### Removed
+
+  - Remove deprecated mqtt-async-client transport (#12)
+
 ### Improved
 
 - Enhanced `TransportPtr` documentation to clarify Arc semantics and connection sharing
