@@ -12,17 +12,16 @@ readme = "README.md"
 documentation = "https://docs.rs/mom-rpc"
 
 [dependencies]
-anyhow            = "1.0"
-async-trait       = "0.1"
-bytes             = { version = "1", features = ["serde"] }
-log               = { version = "0.4", optional = true }
-mqtt-async-client = { version = "0.3", optional = true }
-rumqttc           = { version = "0.24", optional = true }
-serde             = { version = "1", features = ["derive", "rc"] }
-serde_json        = "1"
-thiserror         = "2"
-tokio             = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
-uuid              = { version  = "1.11", features = ["v4", "serde"] }
+anyhow       = "1.0"
+async-trait  = "0.1"
+bytes        = { version = "1", features = ["serde"] }
+log          = { version = "0.4", optional = true }
+rumqttc      = { version = "0.24", optional = true }
+serde        = { version = "1", features = ["derive", "rc"] }
+serde_json   = "1"
+thiserror    = "2"
+tokio        = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+uuid         = { version  = "1.11", features = ["v4", "serde"] }
 
 [dev-dependencies]
 env_logger = "0.11"
@@ -41,7 +40,6 @@ path = "examples/math_client.rs"
 [features]
 default = ["logging"]
 logging = ["log"]
-transport_mqttac = ["mqtt-async-client"]
 transport_rumqttc = ["rumqttc"]
 
 [lints.clippy]

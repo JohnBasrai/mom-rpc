@@ -292,25 +292,18 @@ transport's delivery semantics as closely as the underlying system allows.
   mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
   ```
 
-* **mqtt-async-client** — ⚠️ **Deprecated**
-  
-  Legacy MQTT backend provided for backward compatibility only.
-  **This feature will be removed in v0.4.0.** Please migrate to `transport_rumqttc`.
-  
-  The mqtt-async-client dependency is unmaintained and pulls in older TLS libraries.
-
 Additional transports may be added in the future behind feature flags.
 
 ### Transport Comparison
 
-| Feature | Memory | rumqttc | mqttac (deprecated) |
-|---------|--------|---------|---------------------|
-| **Broker Required** | ❌ No | ✅ Yes | ✅ Yes |
-| **Multi-Process** | ❌ No | ✅ Yes | ✅ Yes |
-| **Production Ready** | Testing only | ✅ Yes | ⚠️ Legacy |
-| **Maintenance** | ✅ Active | ✅ Active | ❌ Unmaintained |
-| **TLS Support** | N/A | ✅ Yes | ⚠️ Older stack |
-| **Use Case** | Testing, single-process | Production MQTT | Migration only |
+| Feature | Memory | rumqttc |
+|:--------|:-------|:--------|
+| **Broker Required**  | ❌ No        | ✅ Yes    |
+| **Multi-Process**    | ❌ No        | ✅ Yes    |
+| **Production Ready** | Testing only | ✅ Yes    |
+| **Maintenance**      | ✅ Active    | ✅ Active |
+| **TLS Support**      | N/A          | ✅ Yes    |
+| **Use Case**         | Testing, single-process | Production MQTT |
 
 **Recommendation:** Use **memory** for testing, **rumqttc** for production.
 
@@ -321,7 +314,6 @@ Additional transports may be added in the future behind feature flags.
 | Flag | Description | Status |
 |------|-------------|--------|
 | `transport_rumqttc` | MQTT via rumqttc | 🌟 **Recommended** |
-| `transport_mqttac` | Legacy MQTT via mqtt-async-client | ⚠️ **Deprecated** (v0.4.0) |
 | `logging` | Enable log output (uses `log` crate) | ✅ Default |
 
 The **memory transport is always available** - no feature flag required.
@@ -340,12 +332,7 @@ mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
 mom-rpc = "0.4"  # Memory transport included by default
 ```
 
-**Migration from mqtt-async-client:**
-Simply change `transport_mqttac` to `transport_rumqttc` in your `Cargo.toml`.
-No code changes required.
-
-**Note:** If multiple transport features are enabled, `transport_rumqttc` takes
-priority, then `transport_mqttac`, then memory as fallback.
+**Note:** If multiple transport features are enabled, `transport_rumqttc` takes priority, then memory as fallback.
 
 ---
 
@@ -425,10 +412,6 @@ This library does not handle authentication. Delegate to:
 * Broker-level auth (username/password, client certificates)
 * Network-level security (VPN, firewall rules)
 * Message-level encryption (application responsibility)
-
-</details>
-
-> **Note:** The legacy `transport_mqttac` feature is optional and disabled by default. It pulls in an older TLS stack via upstream dependencies and is not included in builds unless explicitly enabled. The recommended MQTT transport is `transport_rumqttc`.
 
 ---
 
