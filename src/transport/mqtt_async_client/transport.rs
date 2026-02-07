@@ -357,9 +357,15 @@ impl Transport for MqttAsyncClientTransport {
         self.cmd_tx
             .send(Cmd::Publish { env, resp: tx })
             .await
-            .map_err(|_| RpcError::Transport)?;
+            .map_err(|e| {
+                let msg = format!("actor command channel closed:{e}");
+                RpcError::Transport(msg)
+            })?;
 
-        rx.await.map_err(|_| RpcError::Transport)?
+        rx.await.map_err(|e| {
+            let msg = format!("actor response channel read failed:{e}");
+            RpcError::Transport(msg)
+        })?
     }
 
     async fn subscribe(
@@ -385,9 +391,15 @@ impl Transport for MqttAsyncClientTransport {
                 resp: resp_tx,
             })
             .await
-            .map_err(|_| RpcError::Transport)?;
+            .map_err(|e| {
+                let msg = format!("actor command channel closed:{e}");
+                RpcError::Transport(msg)
+            })?;
 
-        resp_rx.await.map_err(|_| RpcError::Transport)??;
+        resp_rx.await.map_err(|e| {
+            let msg = format!("actor response channel read failed:{e}");
+            RpcError::Transport(msg)
+        })??;
 
         Ok(SubscriptionHandle { inbox: rx })
     }
@@ -421,9 +433,9 @@ async fn create_mqtt_client(config: &RpcConfig) -> Result<Client> {
     let client_id = &config.transport_id;
 
     let mut builder = Client::builder();
-    builder.set_url_string(broker_addr).map_err(|_err| {
-        log_error!("mqtt: failed to set broker URL {}: {_err}", broker_addr);
-        RpcError::Transport
+    builder.set_url_string(broker_addr).map_err(|err| {
+        let msg = format!("mqtt: failed to set broker URL {}: {err}", broker_addr);
+        RpcError::Transport(msg)
     })?;
 
     builder.set_client_id(Some(client_id.clone()));
@@ -434,14 +446,14 @@ async fn create_mqtt_client(config: &RpcConfig) -> Result<Client> {
         });
     }
 
-    let mut client = builder.build().map_err(|_err| {
-        log_error!("mqtt: failed to build client: {_err}");
-        RpcError::Transport
+    let mut client = builder.build().map_err(|err| {
+        let msg = format!("mqtt: failed to build client: {err}");
+        RpcError::Transport(msg)
     })?;
 
-    client.connect().await.map_err(|_err| {
-        log_error!("mqtt: failed to connect to broker {}: {_err}", broker_addr);
-        RpcError::Transport
+    client.connect().await.map_err(|err| {
+        let msg = format!("mqtt: failed to connect to broker {}: {err}", broker_addr);
+        RpcError::Transport(msg)
     })?;
 
     Ok(client)

@@ -206,10 +206,10 @@ impl RpcClient {
             )
             .await?;
 
-        let response = rx.await.map_err(|_err| {
-            #[cfg(feature = "logging")]
-            log::warn!("response channel closed (server dropped or transport shutdown:{_err:?})");
-            RpcError::Transport
+        let response = rx.await.map_err(|err| {
+            let msg =
+                format!("response channel closed (server dropped or transport shutdown:{err:?})");
+            RpcError::Transport(msg)
         })?;
         let resp: TResp = serde_json::from_slice(&response)?;
         Ok(resp)

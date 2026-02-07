@@ -27,7 +27,7 @@ pub enum RpcError {
 
     /// A transport-level failure that does not map to a more specific variant.
     #[error("transport error")]
-    Transport,
+    Transport(String),
 
     /// No handler was registered for the requested method.
     ///
