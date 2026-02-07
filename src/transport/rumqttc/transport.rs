@@ -78,10 +78,10 @@ use tokio::task::JoinHandle;
 use crate::{
     //
     Envelope,
-    Error,
     PublishOptions,
     Result,
     RpcConfig,
+    RpcError,
     SubscribeOptions,
     Subscription,
     SubscriptionHandle,
@@ -337,7 +337,7 @@ impl MqttActor {
                     "{}: failed to serialize publish payload: {_err}",
                     self.transport_id
                 );
-                return Err(Error::Transport);
+                return Err(RpcError::Transport);
             }
         };
 
@@ -349,7 +349,7 @@ impl MqttActor {
                     "{}: publish failed for topic {topic}: {_err}",
                     self.transport_id
                 );
-                Error::Transport
+                RpcError::Transport
             })
     }
 
@@ -372,7 +372,7 @@ impl MqttActor {
                     "{}: attempted concurrent subscribe while one is pending",
                     self.transport_id
                 );
-                let _ = resp.send(Err(Error::Transport));
+                let _ = resp.send(Err(RpcError::Transport));
                 return;
             }
             *pending = Some((topic.clone(), resp));
@@ -387,7 +387,7 @@ impl MqttActor {
                     "{}: failed to send subscribe for topic {topic}: {_err}",
                     self.transport_id
                 );
-                let _ = responder.send(Err(Error::Transport));
+                let _ = responder.send(Err(RpcError::Transport));
             }
         }
 
@@ -427,7 +427,7 @@ impl MqttActor {
                 "{transport_id}: subscription failed for topic {topic}: {:?}",
                 suback.return_codes
             );
-            let _ = responder.send(Err(Error::Transport));
+            let _ = responder.send(Err(RpcError::Transport));
         }
     }
 
@@ -544,9 +544,9 @@ impl Transport for RumqttcTransport {
         self.cmd_tx
             .send(Cmd::Publish { env, resp: tx })
             .await
-            .map_err(|_| Error::Transport)?;
+            .map_err(|_| RpcError::Transport)?;
 
-        rx.await.map_err(|_| Error::Transport)?
+        rx.await.map_err(|_| RpcError::Transport)?
     }
 
     async fn subscribe(
@@ -572,9 +572,9 @@ impl Transport for RumqttcTransport {
                 resp: resp_tx,
             })
             .await
-            .map_err(|_| Error::Transport)?;
+            .map_err(|_| RpcError::Transport)?;
 
-        resp_rx.await.map_err(|_| Error::Transport)??;
+        resp_rx.await.map_err(|_| RpcError::Transport)??;
 
         Ok(SubscriptionHandle { inbox: rx })
     }
@@ -639,7 +639,7 @@ fn create_mqtt_client(config: &RpcConfig) -> Result<(AsyncClient, EventLoop)> {
                     "rumqttc: invalid port in broker URL {}: {_err}",
                     broker_addr
                 );
-                Error::Transport
+                RpcError::Transport
             })?,
         ),
         None => (url, 1883),

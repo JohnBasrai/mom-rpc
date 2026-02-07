@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
 
     let transport = create_transport(&config).await?;
 
-    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "math");
 
     server.register("add", |req: AddRequest| async move {
         Ok(AddResponse { sum: req.a + req.b })

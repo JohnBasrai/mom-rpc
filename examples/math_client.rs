@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
 
     let transport = create_transport(&config).await?;
 
-    let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+    let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
 
     let resp: AddResponse = client
         .request_to("math", "add", AddRequest { a: 2, b: 3 })

@@ -1,6 +1,6 @@
 [package]
 name = "mom-rpc"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["John Basrai"]
 description = "Transport-agnostic async RPC over message-oriented middleware (MQTT, in-memory)"
@@ -43,3 +43,6 @@ default = ["logging"]
 logging = ["log"]
 transport_mqttac = ["mqtt-async-client"]
 transport_rumqttc = ["rumqttc"]
+
+[lints.clippy]
+uninlined-format-args = "warn"

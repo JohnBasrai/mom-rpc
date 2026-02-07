@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Crate-wide result type.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, RpcError>;
 
 /// Errors surfaced by the RPC layer.
 ///
@@ -9,7 +9,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// implementations are responsible for mapping their internal failures into
 /// one of these variants.
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum RpcError {
     /// A request timed out while waiting for a response.
     ///
     /// Timeouts are currently introduced explicitly by higher-level logic

@@ -72,7 +72,7 @@ pub use server::RpcServer;
 pub use rpc_config::RpcConfig;
 
 pub use correlation::CorrelationId;
-pub use error::{Error, Result};
+pub use error::{Result, RpcError};
 
 /// Create a new in-memory transport.
 ///

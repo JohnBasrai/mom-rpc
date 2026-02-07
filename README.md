@@ -65,13 +65,13 @@ use mom_rpc::{create_transport, RpcClient, RpcConfig, RpcServer, Result};
 let config = RpcConfig::memory("math");
 let transport = create_transport(&config).await?;
 
-let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+let server = RpcServer::with_transport(transport.clone(), "math");
 server.register("add", |req: AddRequest| async move {
     Ok(AddResponse { sum: req.a + req.b })
 });
 let _handle = server.spawn();
 
-let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
 let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3 }).await?;
 ```
 
@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
     let config = RpcConfig::memory("math");
     let transport = create_transport(&config).await?;
 
-    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "math");
 
     server.register("add", |req: AddRequest| async move {
         Ok(AddResponse { sum: req.a + req.b })
@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
 
     let _handle = server.spawn();
 
-    let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+    let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
 
     let resp: AddResponse = client
         .request_to("math", "add", AddRequest { a: 2, b: 3 })
@@ -131,7 +131,7 @@ For distributed deployments with an MQTT broker:
 **Cargo.toml:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.3", features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
 ```
 
 **Basic usage:**
@@ -139,14 +139,14 @@ mom-rpc = { version = "0.3", features = ["transport_rumqttc"] }
 // Server
 let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-server");
 let transport = create_transport(&config).await?;
-let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+let server = RpcServer::with_transport(transport.clone(), "math");
 server.register("add", |req: AddRequest| async move { /* ... */ });
 server.run().await?;
 
 // Client
 let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-client");
 let transport = create_transport(&config).await?;
-let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
 let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3 }).await?;
 ```
 
@@ -168,7 +168,7 @@ async fn main() -> anyhow::Result<()> {
     let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-server");
     let transport = create_transport(&config).await?;
 
-    let server = RpcServer::with_transport(transport.clone(), "math".to_owned());
+    let server = RpcServer::with_transport(transport.clone(), "math");
 
     server.register("add", |req: AddRequest| async move {
         Ok(AddResponse { sum: req.a + req.b })
@@ -207,7 +207,7 @@ async fn main() -> anyhow::Result<()> {
     let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-client");
     let transport = create_transport(&config).await?;
 
-    let client = RpcClient::with_transport(transport.clone(), "client-1".to_string()).await?;
+    let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
 
     let resp: AddResponse = client
         .request_to("math", "add", AddRequest { a: 2, b: 3 })
@@ -233,6 +233,29 @@ cargo run --example math_server --features transport_rumqttc
 cargo run --example math_client --features transport_rumqttc
 ```
 
+### Logging
+
+The `logging` feature (enabled by default) provides diagnostic output via the `log` crate at `INFO` level during normal operation.
+
+**To reduce verbosity**, lower the log level to `WARN` or `ERROR`:
+```toml
+[dev-dependencies]
+env_logger = "0.11"
+```
+```rust
+// Reduce mom-rpc logs to warnings only
+env_logger::builder()
+    .filter_module("mom_rpc", log::LevelFilter::Warn)
+    .init();
+```
+
+**Note:** Running with `RUST_LOG=debug` will produce verbose output. This is useful for troubleshooting but not recommended for production.
+
+**To disable logging entirely**, omit the feature:
+```toml
+[dependencies]
+mom-rpc = { version = "0.4", default-features = false, features = ["transport_rumqttc"] }
+```
 ---
 
 ## Transports
@@ -266,7 +289,7 @@ transport's delivery semantics as closely as the underlying system allows.
   - Active maintenance and modern async patterns
   
   ```toml
-  mom-rpc = { version = "0.3", features = ["transport_rumqttc"] }
+  mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
   ```
 
 * **mqtt-async-client** — ⚠️ **Deprecated**
@@ -308,13 +331,13 @@ The **memory transport is always available** - no feature flag required.
 **For production MQTT deployments:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.3", features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
 ```
 
 **For testing without a broker:**
 ```toml
 [dependencies]
-mom-rpc = "0.3"  # Memory transport included by default
+mom-rpc = "0.4"  # Memory transport included by default
 ```
 
 **Migration from mqtt-async-client:**

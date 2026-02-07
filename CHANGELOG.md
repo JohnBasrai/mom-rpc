@@ -7,6 +7,20 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.4.0] - 2026-02-07
+
+### Changed
+
+- **BREAKING:** Renamed `Error` enum to `RpcError` to avoid confusion with `std::error::Error` (#6)
+  - Update imports: `use mom_rpc::Error` → `use mom_rpc::RpcError`
+  - The `Result<T>` type alias remains unchanged and now uses `RpcError` internally
+
+### Improved
+
+- Enhanced `TransportPtr` documentation to clarify Arc semantics and connection sharing
+- Added logging configuration guide to README explaining default levels and how to control verbosity
+
+
 ## [0.3.0] - 2026-02-06
 
 ### Added

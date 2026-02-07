@@ -112,8 +112,8 @@ When testing RPC flows, ensure coverage of:
 async fn test_concurrent_requests() {
     // Setup
     let transport = create_memory_transport().await.unwrap();
-    let server = RpcServer::with_transport(transport.clone(), "test".into());
-    let client = RpcClient::with_transport(transport.clone(), "client".into()).await.unwrap();
+    let server = RpcServer::with_transport(transport.clone(), "test");
+    let client = RpcClient::with_transport(transport.clone(), "client").await.unwrap();
     
     // Register handler
     server.register("echo", |req: String| async move {

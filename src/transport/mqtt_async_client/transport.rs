@@ -65,10 +65,10 @@ use tokio::task::JoinHandle;
 use crate::{
     //
     Envelope,
-    Error,
     PublishOptions,
     Result,
     RpcConfig,
+    RpcError,
     SubscribeOptions,
     Subscription,
     SubscriptionHandle,
@@ -357,9 +357,9 @@ impl Transport for MqttAsyncClientTransport {
         self.cmd_tx
             .send(Cmd::Publish { env, resp: tx })
             .await
-            .map_err(|_| Error::Transport)?;
+            .map_err(|_| RpcError::Transport)?;
 
-        rx.await.map_err(|_| Error::Transport)?
+        rx.await.map_err(|_| RpcError::Transport)?
     }
 
     async fn subscribe(
@@ -385,9 +385,9 @@ impl Transport for MqttAsyncClientTransport {
                 resp: resp_tx,
             })
             .await
-            .map_err(|_| Error::Transport)?;
+            .map_err(|_| RpcError::Transport)?;
 
-        resp_rx.await.map_err(|_| Error::Transport)??;
+        resp_rx.await.map_err(|_| RpcError::Transport)??;
 
         Ok(SubscriptionHandle { inbox: rx })
     }
@@ -423,7 +423,7 @@ async fn create_mqtt_client(config: &RpcConfig) -> Result<Client> {
     let mut builder = Client::builder();
     builder.set_url_string(broker_addr).map_err(|_err| {
         log_error!("mqtt: failed to set broker URL {}: {_err}", broker_addr);
-        Error::Transport
+        RpcError::Transport
     })?;
 
     builder.set_client_id(Some(client_id.clone()));
@@ -436,12 +436,12 @@ async fn create_mqtt_client(config: &RpcConfig) -> Result<Client> {
 
     let mut client = builder.build().map_err(|_err| {
         log_error!("mqtt: failed to build client: {_err}");
-        Error::Transport
+        RpcError::Transport
     })?;
 
     client.connect().await.map_err(|_err| {
         log_error!("mqtt: failed to connect to broker {}: {_err}", broker_addr);
-        Error::Transport
+        RpcError::Transport
     })?;
 
     Ok(client)
