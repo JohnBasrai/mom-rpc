@@ -337,26 +337,14 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
 
 Additional transports may be added in the future behind feature flags.
 
-### Transport Comparison
-
-| Feature | Memory | rumqttc |
-|:--------|:-------|:--------|
-| **Broker Required**  | ❌ No        | ✅ Yes    |
-| **Multi-Process**    | ❌ No        | ✅ Yes    |
-| **Production Ready** | Testing only | ✅ Yes    |
-| **Maintenance**      | ✅ Active    | ✅ Active |
-| **TLS Support**      | N/A          | ✅ Yes    |
-| **Use Case**         | Testing, single-process | Production MQTT |
-
-**Recommendation:** Use **memory** for testing, **rumqttc** for production.
-
 ---
 
 ## Feature flags
 
 | Flag | Description | Status |
-|------|-------------|--------|
-| `transport_rumqttc` | MQTT via rumqttc | 🌟 **Recommended** |
+|:-----|:------------|:-------|
+| `transport_rumqttc`  | MQTT via rumqttc | 🌟 **Recommended** |
+| `transport_lapin` | AMQP via lapin (RabbitMQ) | ✅ Production Ready |
 | `logging` | Enable log output (uses `log` crate) | ✅ Default |
 
 The **memory transport is always available** - no feature flag required.
