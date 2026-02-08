@@ -131,6 +131,46 @@ async fn main() -> Result<()> {
 cargo run --example math_memory
 ```
 
+### Testing with RabbitMQ
+
+   See [scripts/manual-tests/README.md](scripts/manual-tests/README.md) for automated test scripts.
+
+**Click on Details so see expected output** <details>
+
+```bash
+
+./scripts/manual-tests/rabbitmq.sh transport_lapin
+==> Checking prerequisites...
+==> Starting RabbitMQ broker...
+    Container: mom-rpc-test-rabbitmq
+    AMQP port: 5672
+    Management UI: http://localhost:15672 (guest/guest)
+    Waiting for broker to be ready...
+    ✓ RabbitMQ broker ready
+
+==> Building examples with feature: transport_lapin
+    ✓ Examples built successfully
+
+==> Starting math_server...
+    Server PID: 272977
+    Waiting for server to initialize...
+    ✓ Server running
+
+==> Running math_client...
+
+✅ RabbitMQ integration test PASSED
+
+Feature tested: transport_lapin
+Broker URI: amqp://localhost:5672/%2f
+Output:2 + 3 = 5
+
+==> Cleaning up...
+Killing server (PID: 272977)...
+Stopping RabbitMQ container...
+
+```
+</details>
+
 ### MQTT Transport (Production)
 
 For distributed deployments with an MQTT broker:
@@ -284,13 +324,13 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
 ### Available brokered transports
 
 * **rumqttc (MQTT)** — 🌟 **Recommended MQTT backend**
-  
+
   Enable via the `transport_rumqttc` feature. This implementation provides:
   - Actor-based architecture with safe concurrency
   - Lazy connection initialization
   - SUBACK-confirmed subscriptions
   - Active maintenance and modern async patterns
-  
+
   ```toml
   mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
   ```

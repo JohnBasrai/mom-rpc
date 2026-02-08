@@ -7,6 +7,45 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.5.0] - 2026-02-08
+
+### Added
+
+- **AMQP transport via lapin** for RabbitMQ and AMQP 0-9-1 brokers
+  - Actor-based concurrency with ephemeral queue semantics
+  - Enable via `transport_lapin` feature flag
+- Manual integration test scripts in `scripts/manual-tests/`
+  - `rabbitmq.sh` for automated AMQP testing
+
+### Changed
+
+- **BREAKING:** RpcConfig API updated for multi-transport support
+  - `broker_addr: String` → `transport_uri: Option<String>`
+  - Added optional `request_queue_name` and `response_queue_name` (AMQP-specific)
+  - Added builder methods: `with_request_queue_name()`, `with_response_queue_name()`
+
+- **BREAKING:** Feature renamed for consistency
+  - Features now named after library, not protocol
+  - Enables multiple implementations per protocol
+
+- Transport directory restructured to protocol → library hierarchy
+  - `transport/memory.rs` (flat)
+  - `transport/mqtt/rumqttc.rs` (MQTT via rumqttc)
+  - `transport/amqp/lapin.rs` (AMQP via lapin)
+  - EMBP gateways at protocol level
+
+### Dependencies
+
+- Added `lapin = "2"` (AMQP client, optional)
+- Added `futures-lite = "2"` (for lapin streams, optional)
+
+### Documentation
+
+- Updated architecture.md with AMQP transport details and directory structure
+- Updated contributing/ARCHITECTURE.md with transport addition guide
+- Added README section for RabbitMQ testing
+- Examples now support `BROKER_URI` env var for multi-transport testing
+
 ## [0.4.0] - 2026-02-07
 
 ### Changed
