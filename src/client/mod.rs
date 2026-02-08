@@ -19,7 +19,6 @@ use crate::{
     PublishOptions,
     Result,
     RpcError,
-    SubscribeOptions,
     Subscription,
     TransportPtr,
 };
@@ -88,9 +87,7 @@ impl RpcClient {
         // but they should approximate memory semantics where possible.
         let response_sub: Subscription = Subscription::from(format!("responses/{node_id}"));
 
-        let mut handle = transport
-            .subscribe(response_sub, SubscribeOptions { durable: false })
-            .await?;
+        let mut handle = transport.subscribe(response_sub).await?;
 
         // We need a partially built client to call handle_response().
         let pending: Mutex<PendingMap> = Mutex::new(PendingMap::new());

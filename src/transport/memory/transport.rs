@@ -23,7 +23,6 @@ use crate::{
     PublishOptions,
     Result,
     RpcConfig,
-    SubscribeOptions,
     Subscription,
     SubscriptionHandle,
     Transport,
@@ -41,7 +40,7 @@ use crate::{
 /// - Subscriptions are registered immediately.
 /// - Once `subscribe()` returns, subsequent matching publishes are deliverable.
 /// - Message delivery is deterministic within a single process.
-/// - Dropping a `SubscriptionHandle` implicitly unregisters the subscription.
+/// - Subscriptions remain active until the transport is closed.
 ///
 /// ## Non-Goals
 ///
@@ -99,11 +98,7 @@ impl Transport for MemoryTransport {
     /// Once this function returns successfully, any subsequent calls to
     /// `publish()` with matching addresses are deliverable to the returned
     /// inbox.
-    async fn subscribe(
-        &self,
-        sub: Subscription,
-        _opts: SubscribeOptions,
-    ) -> Result<SubscriptionHandle> {
+    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
         // ---
 
         #[cfg(feature = "logging")]

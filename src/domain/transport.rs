@@ -177,30 +177,9 @@ pub struct PublishOptions {
     pub ttl_ms: Option<u64>,
 }
 
-/// Options controlling subscription behavior.
-///
-/// These options express intent only. Not all transports are required to
-/// support all options.
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-pub struct SubscribeOptions {
-    // ---
-    /// Whether this subscription should persist across disconnections.
-    ///
-    /// When `true`, the broker maintains the subscription and queues messages
-    /// even when the transport disconnects. When `false`, subscriptions are
-    /// dropped on disconnect.
-    ///
-    /// **Note:** Durable subscriptions currently have no explicit cleanup
-    /// mechanism. See issue #5 for adding `unsubscribe()` support.
-    pub durable: bool,
-}
-
 /// Handle returned from a successful subscription.
 ///
-/// Dropping the handle indicates that the subscription is no longer needed.
-/// Transport implementations may use this as a signal to unregister the
-/// subscription.
+/// The subscription remains active until the transport is closed.
 pub struct SubscriptionHandle {
     // ---
     /// Receiver channel for delivered envelopes matching this subscription.
@@ -246,11 +225,7 @@ pub trait Transport: Send + Sync {
     async fn publish(&self, env: Envelope, opts: PublishOptions) -> Result<()>;
 
     /// Register a subscription and return a handle for receiving messages.
-    async fn subscribe(
-        &self,
-        sub: Subscription,
-        opts: SubscribeOptions,
-    ) -> Result<SubscriptionHandle>;
+    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle>;
 
     /// Close the transport and release any associated resources.
     async fn close(&self) -> Result<()>;

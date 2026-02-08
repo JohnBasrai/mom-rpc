@@ -87,7 +87,6 @@ pub use domain::{
     Address,
     Envelope,
     PublishOptions,
-    SubscribeOptions,
     Subscription,
     SubscriptionHandle,
     Transport,

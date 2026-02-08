@@ -8,8 +8,6 @@ use bytes::Bytes;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::SubscribeOptions;
-
 use super::{
     // ---
     Address,
@@ -204,11 +202,7 @@ impl RpcServer {
         // ---
         let sub = Subscription::from(format!("requests/{}", self.node_id()));
 
-        let mut handle = self
-            .inner
-            .transport
-            .subscribe(sub, SubscribeOptions { durable: false })
-            .await?;
+        let mut handle = self.inner.transport.subscribe(sub).await?;
 
         loop {
             tokio::select! {
