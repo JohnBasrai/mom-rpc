@@ -636,20 +636,23 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
 fn create_mqtt_client(config: &RpcConfig) -> Result<(AsyncClient, EventLoop)> {
     // ---
 
-    let broker_addr = &config.broker_addr;
+    let transport_uri = config
+        .transport_uri
+        .as_deref()
+        .ok_or_else(|| RpcError::Transport("MQTT transport requires transport_uri".to_string()))?;
     let client_id = &config.transport_id;
 
     // Parse broker address (e.g., "mqtt://localhost:1883")
-    let url = broker_addr
+    let url = transport_uri
         .strip_prefix("mqtt://")
-        .or_else(|| broker_addr.strip_prefix("tcp://"))
-        .unwrap_or(broker_addr);
+        .or_else(|| transport_uri.strip_prefix("tcp://"))
+        .unwrap_or(transport_uri);
 
     let (host, port) = match url.split_once(':') {
         Some((h, p)) => (
             h,
             p.parse().map_err(|err| {
-                let msg = format!("rumqttc: invalid port in broker URL {broker_addr}: {err}");
+                let msg = format!("rumqttc: invalid port in broker URL {transport_uri}: {err}");
                 log_error!("{msg}");
                 RpcError::Transport(msg)
             })?,

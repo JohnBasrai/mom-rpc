@@ -8,6 +8,7 @@
 //!
 //! - **Memory** (default) - In-process testing transport, always available
 //! - **MQTT via rumqttc** - Recommended MQTT backend (enable `transport_rumqttc`)
+//! - **AMQP via lapin** - RabbitMQ and AMQP 0-9-1 brokers (enable `transport_amqp`)
 //!
 //! # Quick Start
 //!
@@ -43,6 +44,7 @@
 //! # Feature Flags
 //!
 //! - `transport_rumqttc` - MQTT via rumqttc (recommended for production)
+//! - `transport_lapin` - AMQP via lapin (for RabbitMQ and AMQP 0-9-1 brokers)
 //! - `logging` - Enable log output (enabled by default)
 //!
 //! # Examples
@@ -81,6 +83,9 @@ pub use transport::create_memory_transport;
 #[cfg(feature = "transport_rumqttc")]
 pub use transport::create_rumqttc_transport;
 
+#[cfg(feature = "transport_lapin")]
+pub use transport::create_lapin_transport;
+
 // --- public re-exports
 pub use domain::{
     //
@@ -99,9 +104,10 @@ pub use domain::{
 /// transport implementation based on feature flags with the following priority:
 ///
 /// 1. `transport_rumqttc` - MQTT via rumqttc (recommended)
-/// 2. Default - In-memory transport
+/// 2. `transport_lapin` - AMQP via lapin
+/// 3. Default - In-memory transport
 ///
-/// If multiple transport features are enabled, rumqttc takes precedence.
+/// If multiple transport features are enabled, rumqttc takes precedence over lapin.
 ///
 /// # Examples
 ///
@@ -118,6 +124,10 @@ pub use domain::{
 ///     let config = RpcConfig::with_broker("mqtt://localhost:1883", "my-app");
 ///     let transport = create_transport(&config).await?;
 ///     
+///     // AMQP transport (requires transport_lapin feature)
+///     let config = RpcConfig::with_broker("amqp://localhost:5672/%2f", "my-app");
+///     let transport = create_transport(&config).await?;
+///     
 ///     Ok(())
 /// }
 /// ```
@@ -125,7 +135,7 @@ pub use domain::{
 /// # Errors
 ///
 /// Returns an error if:
-/// - MQTT broker URL is invalid (for MQTT transports)
+/// - Broker URI is invalid (for MQTT/AMQP transports)
 /// - Transport initialization fails
 pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
@@ -134,8 +144,13 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
         return create_rumqttc_transport(config).await;
     }
 
+    #[cfg(all(feature = "transport_lapin", not(feature = "transport_rumqttc")))]
+    {
+        return create_lapin_transport(config).await;
+    }
+
     // Fallback / default
-    #[cfg(not(feature = "transport_rumqttc"))]
+    #[cfg(not(any(feature = "transport_rumqttc", feature = "transport_lapin")))]
     {
         create_memory_transport(config).await
     }
