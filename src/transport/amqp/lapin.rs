@@ -472,7 +472,11 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
 
     let (connection, channel) = create_amqp_connection(config).await?;
-    Ok(AmqpTransport::create("amqp", connection, channel))
+    Ok(AmqpTransport::create(
+        &config.transport_id,
+        connection,
+        channel,
+    ))
 }
 
 /// Creates an AMQP connection and channel from the given configuration.

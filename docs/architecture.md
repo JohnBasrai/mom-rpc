@@ -2,163 +2,6 @@
 
 ## Overview
 
-This crate implements a **transport-agnostic RPC layer** designed to run over
-message-oriented middleware (MOM) systems such as MQTT, RabbitMQ, or in-memory
-transports used for testing.
-
-The design deliberately separates:
-
-* **Transport mechanics** (publish / subscribe, delivery, fanout)
-* **RPC semantics** (request / response, correlation, method dispatch)
-* **User-facing APIs** (client and server)
-
-The architecture follows an **Explicit Module Boundary Pattern (EMBP)**.
-
----
-
-## Layering
-
-```
-
-   ┌─────────────────────────────┐
-   │         User Code           │
-   │  (RpcClient / RpcServer)    │
-   └───────────────▲─────────────┘
-                   │
-                   │
-   ┌───────────────┴─────────────┐
-   │         RPC Layer           │
-   │  - Correlation handling     │
-   │  - Method dispatch          │
-   │  - Pending request tracking │
-   └───────────────▲─────────────┘
-                   │
-   ┌───────────────┴─────────────┐
-   │      Transport Layer        │
-   │  - Publish / Subscribe      │
-   │  - Delivery semantics       │
-   │  - Addressing               │
-   └───────────────▲─────────────┘
-                   │
-   ┌───────────────┴───────────────┐
-   │     Concrete Transports       │
-   │  - memory (reference)         │
-   │  - rumqttc (MQTT, implemented)│
-   │  - mqtt-async-client (legacy) │
-   │  - (future: rabbitmq, etc.)   │
-   └───────────────────────────────┘
-
-```
-
----
-
-## Transport Layer
-
-### Transport Trait
-
-The transport layer is defined by a small trait that supports:
-
-* Publishing an `Envelope`
-* Subscribing to an address
-* Closing/releasing resources
-* Identifying itself via `transport_id()` for logging
-
-The transport layer **does not implement RPC semantics**.
-
----
-
-## Memory Transport (Reference Implementation)
-
-The in-memory transport serves as the **reference implementation** for transport
-behavior.
-
-* In-process only
-* No broker required
-* Fanout delivery
-* No replay or durability
-
-All other transports are expected to approximate this behavior as closely as
-their underlying systems allow.
-
----
-
-## Rumqttc Transport (MQTT)
-
-The `rumqttc` transport adapts MQTT semantics to the transport contract defined
-by this crate.
-
-### Concurrency model
-
-* A single background actor owns the MQTT `EventLoop`
-* All interaction with the MQTT client is serialized through the actor
-* No other task touches the event loop directly
-
-This preserves safety while keeping the public `Transport` trait `Send + Sync`.
-
-### Connection behavior
-
-* One broker connection per transport instance
-* Connection is lazy and initiated when polling begins
-* Connection success or failure is surfaced via logging
-
-### Subscription semantics
-
-* Subscriptions are registered one at a time
-* Each subscribe waits for SUBACK confirmation
-* Serialization is required because SUBACK packets do not include topic names
-
-### Message delivery
-
-* Incoming publishes are demultiplexed by topic
-* Messages are fanned out to all local subscribers
-* Delivery is best-effort and non-durable
-* No retained-message or replay behavior
-
----
-
-## RPC Layer
-
-### Correlation
-
-RPC request/response matching is implemented using correlation IDs.
-
-* Each outgoing request registers a pending response
-* Incoming responses are matched by ID
-* Only the first response wins
-
----
-
-## Method Dispatch
-
-* Transport address routes to a node
-* `Envelope.method` selects the handler
-* Allows multiple methods per server without subscription proliferation
-
----
-
-## Non-Goals
-
-This crate intentionally does **not** provide:
-
-* Exactly-once delivery
-* Guaranteed ordering
-* Durable replay
-* Transactional semantics
-* Broker management
-
----
-
-## Summary
-
-The memory transport defines the contract.
-Brokered transports conform as closely as possible.
-
-
-
-# Architecture
-
-## Overview
-
 This crate implements a **transport-agnostic RPC layer** designed to run over message-oriented middleware (MOM) systems such as MQTT, RabbitMQ, or in-memory transports used for testing.
 
 The design deliberately separates:
@@ -180,31 +23,32 @@ The architecture follows an **Explicit Module Boundary Pattern (EMBP)** througho
 ## Layering
 
 ```
-   ┌─────────────────────────────┐
-   │         User Code           │
-   │  (RpcClient / RpcServer)    │
-   └───────────────▲─────────────┘
-                   │
-   ┌───────────────┴─────────────┐
-   │         RPC Layer           │
-   │  - Correlation handling     │
-   │  - Method dispatch          │
-   │  - Pending request tracking │
-   └───────────────▲─────────────┘
-                   │
-   ┌───────────────┴─────────────┐
-   │      Transport Layer        │
-   │  - Publish / Subscribe      │
-   │  - Delivery semantics       │
-   │  - Addressing               │
-   └───────────────▲─────────────┘
-                   │
-  ┌────────────────┴───────────────┐
-  │     Concrete Transports        │
-  │  - memory (implemented)        │
-  │  - mqtt-async-client (planned) │
-  │  - (future: rabbitmq, etc.)    │
-  └────────────────────────────────┘
+   ┌─────────────────────────────┐
+   │         User Code           │
+   │  (RpcClient / RpcServer)    │
+   └───────────────▲─────────────┘
+                   │
+   ┌───────────────┴─────────────┐
+   │         RPC Layer           │
+   │  - Correlation handling     │
+   │  - Method dispatch          │
+   │  - Pending request tracking │
+   └───────────────▲─────────────┘
+                   │
+   ┌───────────────┴─────────────┐
+   │      Transport Layer        │
+   │  - Publish / Subscribe      │
+   │  - Delivery semantics       │
+   │  - Addressing               │
+   └───────────────▲─────────────┘
+                   │
+   ┌───────────────┴───────────────┐
+   │     Concrete Transports       │
+   │  - memory (reference)         │
+   │  - MQTT (rumqttc, implemented)│
+   │  - AMQP (lapin, implemented)  │
+   │  - (future: Kafka, NATS, etc.)│
+   └───────────────────────────────┘
 ```
 
 ---
@@ -248,6 +92,48 @@ Helper constructors enforce intent:
 * `Envelope::request(...)` — requires RPC fields
 * `Envelope::response(...)` — requires correlation id
 
+### Transport Organization
+
+Transports are organized by **protocol → library** hierarchy:
+
+```
+transport/
+├── mod.rs
+├── memory.rs              # Flat - always available, brokerless
+├── mqtt/
+│   ├── mod.rs            # Protocol gateway (EMBP)
+│   └── rumqttc.rs        # MQTT via rumqttc library
+└── amqp/
+    ├── mod.rs            # Protocol gateway (EMBP)
+    └── lapin.rs          # AMQP via lapin library
+```
+
+**Future additions follow the same pattern:**
+
+```
+transport/
+├── mqtt/
+│   ├── rumqttc.rs        # MQTT via rumqttc
+│   └── paho.rs           # Future: MQTT via paho-mqtt
+├── amqp/
+│   ├── lapin.rs          # AMQP via lapin
+│   └── another.rs        # Future: another AMQP library
+├── kafka/
+│   ├── mod.rs
+│   └── rdkafka.rs        # Future: Kafka via rdkafka
+└── dds/
+    ├── mod.rs
+    └── rustdds.rs        # Future: DDS via rustdds
+```
+
+Feature names follow the **library** convention:
+- `transport_rumqttc` (MQTT via rumqttc)
+- `transport_lapin` (AMQP via lapin)
+- `transport_paho` (future: MQTT via paho)
+- `transport_rdkafka` (future: Kafka via rdkafka)
+
+This allows multiple implementations per protocol while keeping feature names specific and unambiguous.
+
 ---
 
 ## Memory Transport (Reference Implementation)
@@ -262,11 +148,11 @@ It:
 * Is used heavily for integration testing
 * Accepts a `transport_id` parameter for debugging/logging
 
-**Important for testing:** Each call to `create_transport(transport_id)` creates an independent transport instance. To share state between client and server in tests, pass the same `TransportPtr` to both.
+**Important for testing:** Each call to `create_transport(config)` creates an independent transport instance. To share state between client and server in tests, pass the same `TransportPtr` to both.
 
 ### Reference Semantics
 
-All other transports are expected to **approximate the memory transport’s behavior as closely as their underlying system allows**.
+All other transports are expected to **approximate the memory transport's behavior as closely as their underlying system allows**.
 
 In particular:
 
@@ -276,6 +162,82 @@ In particular:
 * Best-effort delivery only
 
 Any middleware features that violate these expectations (retained messages, durable queues, etc.) must be disabled or avoided.
+
+---
+
+## Concrete Transport Implementations
+
+<details>
+<summary><strong>Rumqttc Transport (MQTT)</strong></summary>
+
+The `rumqttc` transport adapts MQTT semantics to the transport contract defined by this crate.
+
+### Concurrency model
+
+* A single background actor owns the MQTT `EventLoop`
+* All interaction with the MQTT client is serialized through the actor
+* No other task touches the event loop directly
+
+This preserves safety while keeping the public `Transport` trait `Send + Sync`.
+
+### Connection behavior
+
+* One broker connection per transport instance
+* Connection is lazy and initiated when polling begins
+* Connection success or failure is surfaced via logging
+
+### Subscription semantics
+
+* Subscriptions are registered one at a time
+* Each subscribe waits for SUBACK confirmation
+* Serialization is required because SUBACK packets do not include topic names
+
+### Message delivery
+
+* Incoming publishes are demultiplexed by topic
+* Messages are fanned out to all local subscribers
+* Delivery is best-effort and non-durable
+* No retained-message or replay behavior
+
+</details>
+
+<details>
+<summary><strong>Lapin Transport (AMQP)</strong></summary>
+
+The `lapin` transport provides AMQP 0-9-1 support for RabbitMQ and compatible brokers.
+
+### Concurrency model
+
+* A single background actor owns the AMQP connection and channel
+* All interaction with the AMQP client is serialized through the actor
+* No other task touches the connection directly
+
+This preserves safety while keeping the public `Transport` trait `Send + Sync`.
+
+### Connection behavior
+
+* One broker connection per transport instance
+* Connection happens immediately during transport creation (not lazy)
+* Connection success or failure is surfaced via logging
+
+### Queue semantics
+
+* Queues are declared with ephemeral options suitable for RPC:
+  - `durable: false` - Messages not persisted to disk
+  - `auto_delete: true` - Queue deleted when last consumer disconnects
+  - `exclusive: false` - Multiple consumers allowed
+* Queue names are derived from `transport_id` unless custom names are provided via `RpcConfig`
+* Each queue gets a dedicated consumer task for message handling
+
+### Message delivery
+
+* Incoming AMQP messages are demultiplexed by queue name
+* Messages are fanned out to all local subscribers for that queue
+* Delivery is best-effort and non-durable
+* Messages are acknowledged after successful deserialization
+* Each subscription registers a new local inbox; multiple subscribers per queue are supported
+
+</details>
 
 ---
 
@@ -413,8 +375,7 @@ It provides a **clean RPC abstraction over imperfect transports**, not a perfect
 
 Potential future extensions include:
 
-* **Transport implementation** using `mqtt-async-client` (stubbed but not yet functional)
-* Additional transport implementations (RabbitMQ, NATS, etc.)
+* Additional transport implementations (Kafka, NATS, DDS, etc.)
 * Optional response caching for idempotent requests
 * Pluggable retry / timeout policies
 * Full-duplex client/server unification
@@ -432,5 +393,4 @@ This architecture prioritizes:
 * Transport neutrality
 * Predictable, testable behavior
 
-The memory transport defines the contract.
-Other transports conform as best they can.
+The memory transport defines the contract. Other transports conform as best they can.

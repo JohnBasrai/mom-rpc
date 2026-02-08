@@ -12,6 +12,13 @@ It is designed to *tame* message brokers, not expose them.
 
 ---
 
+## Lean by Design
+
+While this crate supports multiple transport implementations, **applications only compile the transports they enable**. The crate size shown on crates.io is the total of all transport implementations combined, but thanks to Cargo features, your application will only include the code for the transports you actually use. A typical application using a single transport will compile to approximately 45-55 KiB of mom-rpc code regardless of how many total transports the library supports.
+
+
+---
+
 ## Why this exists
 
 Message-oriented middleware (MQTT, pub/sub systems, etc.) is great for decoupling — but painful for request/response workflows:
@@ -270,13 +277,9 @@ The memory transport:
 * is **in-process only**
 * requires all participants to share the same transport instance
 
-It provides a deterministic loopback environment for testing and examples.
-It does **not** model an external broker.
+It provides a deterministic loopback environment for testing and examples. It does **not** model an external broker.
 
-Broker-backed transports (e.g. MQTT) are implemented behind feature flags and
-run out-of-process, with shared state managed by the broker itself.
-All transports conform to the same RPC contract and approximate the in-memory
-transport's delivery semantics as closely as the underlying system allows.
+Broker-backed transports (e.g. MQTT) are implemented behind feature flags and run out-of-process, with shared state managed by the broker itself. All transports conform to the same RPC contract and approximate the in-memory transport's delivery semantics as closely as the underlying system allows.
 
 ### Available brokered transports
 
@@ -372,7 +375,7 @@ This crate intentionally does **not** provide:
 * broker configuration
 * distributed consensus
 
-It provides a **clean RPC abstraction**, not a distributed systems framework.
+This crate focuses narrowly on RPC semantics. It intentionally avoids higher-level distributed-systems concerns such as discovery, consensus, retries, or topology management. The underlying transport is expected to provide any required distributed-systems features.
 
 ---
 
@@ -390,9 +393,7 @@ For details, see `docs/architecture.md`.
 
 ## Security
 
-The `rumqttc` transport supports TLS but delegates certificate validation and
-connection security to the broker. Transport security is intentionally treated 
-as an external concern to avoid coupling RPC semantics to cryptographic policy.
+The `rumqttc` transport supports TLS but delegates certificate validation and connection security to the broker. Transport security is intentionally treated as an external concern to avoid coupling RPC semantics to cryptographic policy.
 
 <details>
 <summary><b>Security best practices</b></summary>
@@ -412,6 +413,8 @@ This library does not handle authentication. Delegate to:
 * Broker-level auth (username/password, client certificates)
 * Network-level security (VPN, firewall rules)
 * Message-level encryption (application responsibility)
+
+</details>
 
 ---
 

@@ -29,14 +29,29 @@ src/
 │   ├── mod.rs        # Gateway: RpcServer
 │   └── handler.rs    # Handler execution
 └── transport/        # Transport implementations
-    ├── mod.rs        # Transport factory
-    ├── memory/       # In-memory transport (always available)
-    │   ├── mod.rs
-    │   └── transport.rs
-    └── rumqttc/      # MQTT transport (optional feature)
-        ├── mod.rs
-        └── transport.rs
+    ├── mod.rs        # Top-level gateway, exports all transports
+    ├── memory.rs     # In-memory transport (always available)
+    ├── mqtt/         # MQTT protocol transports
+    │   ├── mod.rs    # Protocol gateway (EMBP)
+    │   └── rumqttc.rs  # MQTT via rumqttc library
+    └── amqp/         # AMQP protocol transports
+        ├── mod.rs    # Protocol gateway (EMBP)
+        └── lapin.rs  # AMQP via lapin library
 ```
+
+## Transport Organization
+
+Transports are organized by **protocol → library** hierarchy:
+
+- **Protocol level** (`mqtt/`, `amqp/`, etc.) - Contains gateway `mod.rs` and library implementations
+- **Library level** (`rumqttc.rs`, `lapin.rs`) - Single-file transport implementations
+- **Memory transport** (`memory.rs`) - Flat at top level (signals special/default status)
+
+**Why this structure?**
+- Allows multiple implementations per protocol
+- Clear separation between protocols
+- Feature names follow library convention (`transport_rumqttc`, `transport_lapin`)
+- EMBP maintained at protocol level
 
 ## Import Guidelines
 
@@ -59,7 +74,7 @@ use super::correlation::CorrelationId;  // From src/correlation.rs
 ```rust
 // In src/transport/mod.rs
 mod memory;
-pub use memory::create_memory_transport;
+pub use memory::create_transport as create_memory_transport;
 ```
 
 ### From Domain
@@ -88,9 +103,9 @@ use crate::domain::{Transport, Envelope, Address};
 
 ### transport/
 - Transport implementations
-- Memory transport (testing)
-- MQTT transports (production)
-- Each transport is a separate module
+- Memory transport (testing/default)
+- Protocol-based transports (MQTT, AMQP, etc.)
+- Each protocol may have multiple library implementations
 
 ## Adding New Modules
 
@@ -104,25 +119,101 @@ When adding a new module:
 
 ## Adding New Transport
 
-When adding a new transport backend:
+Transports are organized by **protocol → library**. When adding a new transport:
 
-1. Create `src/transport/new_backend/`
-2. Implement `Transport` trait in `transport.rs`
-3. Export factory function in `mod.rs`
-4. Gate with feature flag
-5. Update `src/transport/mod.rs` factory
+### Adding First Implementation for a New Protocol
 
-Example:
+1. Create protocol directory: `src/transport/kafka/`
+2. Create protocol gateway: `src/transport/kafka/mod.rs`
+3. Create library implementation: `src/transport/kafka/rdkafka.rs`
+4. Add feature flag: `transport_rdkafka = ["rdkafka"]`
+5. Update top-level gateway: `src/transport/mod.rs`
+
+Example protocol gateway (`src/transport/kafka/mod.rs`):
 
 ```rust
-// src/transport/new_backend/mod.rs
-mod transport;
-pub use transport::create_new_backend_transport;
+//! Kafka protocol transports.
+//!
+//! This module contains transport implementations for Kafka brokers.
+//! Currently supports:
+//! - rdkafka - Kafka via rdkafka library
 
-// src/transport/mod.rs
-#[cfg(feature = "transport_new_backend")]
-pub use new_backend::create_new_backend_transport;
+#[cfg(feature = "transport_rdkafka")]
+mod rdkafka;
+
+#[cfg(feature = "transport_rdkafka")]
+pub use rdkafka::create_transport as create_rdkafka_transport;
 ```
+
+Example library implementation (`src/transport/kafka/rdkafka.rs`):
+
+```rust
+//! Kafka transport implementation using rdkafka.
+
+use crate::{Result, RpcConfig, Transport, TransportPtr};
+
+pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
+    // Implementation
+}
+```
+
+Update top-level gateway (`src/transport/mod.rs`):
+
+```rust
+#[cfg(feature = "transport_rdkafka")]
+mod kafka;
+
+#[cfg(feature = "transport_rdkafka")]
+pub use kafka::create_rdkafka_transport;
+```
+
+### Adding Second Implementation for Existing Protocol
+
+If a protocol directory already exists (e.g., `mqtt/`), just add the new library:
+
+1. Create library implementation: `src/transport/mqtt/paho.rs`
+2. Add feature flag: `transport_paho = ["paho-mqtt"]`
+3. Update protocol gateway: `src/transport/mqtt/mod.rs`
+
+Example update to protocol gateway:
+
+```rust
+//! MQTT protocol transports.
+
+#[cfg(feature = "transport_rumqttc")]
+mod rumqttc;
+
+#[cfg(feature = "transport_paho")]
+mod paho;
+
+#[cfg(feature = "transport_rumqttc")]
+pub use rumqttc::create_transport as create_rumqttc_transport;
+
+#[cfg(feature = "transport_paho")]
+pub use paho::create_transport as create_paho_transport;
+```
+
+Update top-level gateway to export both:
+
+```rust
+#[cfg(feature = "transport_rumqttc")]
+pub use mqtt::create_rumqttc_transport;
+
+#[cfg(feature = "transport_paho")]
+pub use mqtt::create_paho_transport;
+```
+
+### Feature Naming Convention
+
+Features are named after the **library**, not the protocol:
+
+- ✅ `transport_rumqttc` (library name)
+- ✅ `transport_lapin` (library name)
+- ✅ `transport_paho` (library name)
+- ❌ `transport_mqtt` (too generic)
+- ❌ `transport_amqp` (too generic)
+
+This allows multiple implementations per protocol without naming conflicts.
 
 ## Testing Module Structure
 

@@ -626,7 +626,11 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
 
     let (client, event_loop) = create_mqtt_client(config)?;
-    Ok(RumqttcTransport::create("rumqttc", client, event_loop))
+    Ok(RumqttcTransport::create(
+        &config.transport_id,
+        client,
+        event_loop,
+    ))
 }
 
 /// Creates an MQTT client and event loop from the given configuration.
