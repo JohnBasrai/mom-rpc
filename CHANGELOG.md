@@ -11,6 +11,11 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ### Changed
 
+- **BREAKING:** Remove SubscribeOptions struct (unused durable field)
+  - Simplify Transport::subscribe() signature
+  - Update all implementations and callers
+  - Document that subscriptions remain active until close()
+
 - **BREAKING:** Renamed `Error` enum to `RpcError` to avoid confusion with `std::error::Error` (#6)
   - Update imports: `use mom_rpc::Error` → `use mom_rpc::RpcError`
   - The `Result<T>` type alias remains unchanged and now uses `RpcError` internally
