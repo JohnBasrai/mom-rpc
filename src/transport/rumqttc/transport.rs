@@ -82,7 +82,6 @@ use crate::{
     Result,
     RpcConfig,
     RpcError,
-    SubscribeOptions,
     Subscription,
     SubscriptionHandle,
     Transport,
@@ -562,11 +561,7 @@ impl Transport for RumqttcTransport {
         })?
     }
 
-    async fn subscribe(
-        &self,
-        sub: Subscription,
-        _opts: SubscribeOptions,
-    ) -> Result<SubscriptionHandle> {
+    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
         // ---
 
         let topic = sub.0.as_ref().to_string();

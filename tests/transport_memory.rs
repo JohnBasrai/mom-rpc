@@ -10,7 +10,6 @@ use mom_rpc::{
     Envelope,
     PublishOptions,
     RpcConfig,
-    SubscribeOptions,
 };
 
 #[tokio::test]
@@ -27,7 +26,7 @@ async fn memory_subscribe_then_publish_delivers() {
     let address = Address::from("test.address");
 
     let mut sub = transport
-        .subscribe(address.clone().into(), SubscribeOptions { durable: false })
+        .subscribe(address.clone().into())
         .await
         .expect("subscribe failed");
 
