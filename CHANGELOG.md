@@ -10,6 +10,7 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ### Changed
 - Refactored module structure: moved implementation code from `mod.rs` to dedicated module files
+- Refactored examples: extract math types to common/math_types module
 - Added module-level documentation for client, server, and handler components
 - Minor README formatting improvements
 

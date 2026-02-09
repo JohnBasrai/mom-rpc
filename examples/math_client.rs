@@ -1,26 +1,17 @@
-//! Math RPC client example.
+//! Math RPC client example using a message broker.
 //!
-//! NOTE:
-//! This example is intended for brokered transports (MQTT).
-//! It cannot be used with MemoryTransport, which is in-process only.
+//! Demonstrates connecting to a running math server via MQTT broker.
 //!
 //! Run with: cargo run --example math_client --features transport_rumqttc
 //!
-//! Requires: an MQTT broker running on localhost:1883
+//! Requires:
+//! - An MQTT broker running on localhost:1883
+//! - math_server example running (or another server listening on node_id "math")
 
+mod common;
+
+use common::{AddRequest, AddResponse};
 use mom_rpc::{create_transport, RpcClient, RpcConfig};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-struct AddRequest {
-    a: i32,
-    b: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct AddResponse {
-    sum: i32,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
