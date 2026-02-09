@@ -6,6 +6,12 @@ This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
 ---
+## [0.5.2] - 2026-02-09
+
+### Fixed
+
+- Add missing blank line in server broker code fence example
+  - Markdown requires blank line between HTML tags and code fences
 
 ## [0.5.1] - 2026-02-08
 
