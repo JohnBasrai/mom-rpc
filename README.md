@@ -198,6 +198,7 @@ let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3
 
 <details>
 <summary><b>View complete server with broker example</b></summary>
+
 ```rust
 
 use mom_rpc::{create_transport, RpcConfig, RpcServer};
