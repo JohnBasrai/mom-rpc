@@ -24,16 +24,18 @@ src/
 │   └── transport.rs  # Transport abstraction
 ├── client/           # RPC client
 │   ├── mod.rs        # Gateway: RpcClient
-│   └── pending.rs    # In-flight request tracking
+│   ├── pending.rs    # In-flight request tracking
+│   └── rpc_client.rs # RpcClient implementation
 ├── server/           # RPC server
 │   ├── mod.rs        # Gateway: RpcServer
+│   ├── rpc_server.rs # RpcServer implementation
 │   └── handler.rs    # Handler execution
 └── transport/        # Transport implementations
     ├── mod.rs        # Top-level gateway, exports all transports
     ├── memory.rs     # In-memory transport (always available)
     ├── mqtt/         # MQTT protocol transports
     │   ├── mod.rs    # Protocol gateway (EMBP)
-    │   └── rumqttc.rs  # MQTT via rumqttc library
+    │   └── rumqttc.rs # MQTT via rumqttc library
     └── amqp/         # AMQP protocol transports
         ├── mod.rs    # Protocol gateway (EMBP)
         └── lapin.rs  # AMQP via lapin library

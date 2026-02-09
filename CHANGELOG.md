@@ -6,6 +6,13 @@ This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
 ---
+## [0.5.3] - Unreleased
+
+### Changed
+- Refactored module structure: moved implementation code from `mod.rs` to dedicated module files
+- Added module-level documentation for client, server, and handler components
+- Minor README formatting improvements
+
 ## [0.5.2] - 2026-02-09
 
 ### Fixed
