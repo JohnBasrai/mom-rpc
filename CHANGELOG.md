@@ -11,6 +11,7 @@ Early versions may include intentional refactors as semantics are clarified.
 ### Changed
 - Refactored module structure: moved implementation code from `mod.rs` to dedicated module files
 - Refactored examples: extract math types to common/math_types module
+- Add MSRV validation job to CI (1.75.0, runs on main only)
 - Added module-level documentation for client, server, and handler components
 - Minor README formatting improvements
 

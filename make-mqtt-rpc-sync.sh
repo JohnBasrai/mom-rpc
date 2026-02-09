@@ -1,13 +1,13 @@
 #!/bin/bash
+# Sync project state for AI assistant context
+set -euo pipefail
 
-tar cfvz mom-rpc-sync.tar.gz \
-    .gitignore \
-    .github \
-    CONTRIBUTING.md \
-    CHANGELOG.md \
-    Cargo.lock \
-    Cargo.toml \
-    LICENSE \
-    README.md \
-    docs examples scripts src tests
-    
+OUTPUT="mom-rpc-sync.tar.gz"
+
+echo "==> Creating AI context archive..."
+
+# Include all tracked files plus staged/unstaged changes
+git archive --format=tar HEAD | gzip > "$OUTPUT"
+
+echo "✅ Created: $OUTPUT"
+echo "   Upload this to your AI chat to sync project state"
