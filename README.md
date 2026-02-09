@@ -83,7 +83,7 @@ let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3
 ```
 
 <details>
-<summary><b>View complete example</b></summary>
+<summary><b>View complete memory example</b></summary>
 
 ```rust
 use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
@@ -135,10 +135,10 @@ cargo run --example math_memory
 
    See [scripts/manual-tests/README.md](scripts/manual-tests/README.md) for automated test scripts.
 
-**Click on Details so see expected output** <details>
+<details>
+<summary><b>Expected test output</b></summary>
 
 ```bash
-
 ./scripts/manual-tests/rabbitmq.sh transport_lapin
 ==> Checking prerequisites...
 ==> Starting RabbitMQ broker...
@@ -167,7 +167,6 @@ Output:2 + 3 = 5
 ==> Cleaning up...
 Killing server (PID: 272977)...
 Stopping RabbitMQ container...
-
 ```
 </details>
 
@@ -198,9 +197,9 @@ let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3
 ```
 
 <details>
-<summary><b>View complete server example</b></summary>
-
+<summary><b>View complete server with broker example</b></summary>
 ```rust
+
 use mom_rpc::{create_transport, RpcConfig, RpcServer};
 use serde::{Deserialize, Serialize};
 
@@ -212,7 +211,13 @@ struct AddResponse { sum: i32 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-server");
+
+    env_logger::init();
+
+    let broker_uri = std::env::var("BROKER_URI")
+        .unwrap_or_else(|_| "mqtt://localhost:1883".to_string());
+
+    let config = RpcConfig::with_broker(&broker_uri, "math-server");
     let transport = create_transport(&config).await?;
 
     let server = RpcServer::with_transport(transport.clone(), "math");
@@ -237,7 +242,7 @@ async fn main() -> anyhow::Result<()> {
 </details>
 
 <details>
-<summary><b>View complete client example</b></summary>
+<summary><b>View complete client with broker example</b></summary>
 
 ```rust
 use mom_rpc::{create_transport, RpcClient, RpcConfig};
@@ -251,7 +256,14 @@ struct AddResponse { sum: i32 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-client");
+
+    env_logger::init();
+
+    let broker_uri =
+        std::env::var("BROKER_URI")
+        .unwrap_or_else(|_| "mqtt://localhost:1883".to_string());
+
+    let config = RpcConfig::with_broker(&broker_uri, "math-client");
     let transport = create_transport(&config).await?;
 
     let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
@@ -344,7 +356,7 @@ Additional transports may be added in the future behind feature flags.
 | Flag | Description | Status |
 |:-----|:------------|:-------|
 | `transport_rumqttc`  | MQTT via rumqttc | 🌟 **Recommended** |
-| `transport_lapin` | AMQP via lapin (RabbitMQ) | ✅ Production Ready |
+| `transport_lapin` | AMQP via lapin (RabbitMQ) | ✅ Available |
 | `logging` | Enable log output (uses `log` crate) | ✅ Default |
 
 The **memory transport is always available** - no feature flag required.

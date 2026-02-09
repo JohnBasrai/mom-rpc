@@ -7,6 +7,27 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.5.1] - 2026-02-08
+
+### Changed
+
+- Update crate description to include AMQP
+
+### Fixed
+
+- Fix client example to use reference for broker_uri (`&broker_uri` instead of `broker_uri`)
+  - Ensures consistency with server example
+
+### Documentation
+
+- Clarify example titles to distinguish memory vs broker-based patterns
+  - "View complete memory example" vs "View complete server/client with broker example"
+- Update README broker examples to match actual example files
+  - Add `env_logger::init()` calls
+  - Add `BROKER_URI` env var support for testing different transports
+- Update `transport_lapin` status from "Production Ready" to "Available"
+  - More honest assessment for newly released transport
+
 ## [0.5.0] - 2026-02-08
 
 ### Added
