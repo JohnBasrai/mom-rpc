@@ -180,7 +180,7 @@ For distributed deployments with an MQTT broker:
 mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
 ```
 
-**Basic usage:**
+**Basic broker usage:**
 ```rust
 // Server
 let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-server");
@@ -354,11 +354,11 @@ Additional transports may be added in the future behind feature flags.
 
 ## Feature flags
 
-| Flag | Description | Status |
-|:-----|:------------|:-------|
-| `transport_rumqttc`  | MQTT via rumqttc | 🌟 **Recommended** |
-| `transport_lapin` | AMQP via lapin (RabbitMQ) | ✅ Available |
-| `logging` | Enable log output (uses `log` crate) | ✅ Default |
+| Flag                 | Description               | Status       |
+|:---------------------|:--------------------------|:-------------|
+| `transport_rumqttc`  | MQTT via rumqttc          | ✅ Available |
+| `transport_lapin`    | AMQP via lapin (RabbitMQ) | ✅ Available |
+| `logging`            | Enable logging output     | ✅ Default   |
 
 The **memory transport is always available** - no feature flag required.
 

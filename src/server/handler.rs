@@ -1,3 +1,25 @@
+//! Handler type erasure and wrapping.
+//!
+//! This module provides the [`BoxedHandler`] type and [`wrap_handler`] function
+//! which enable the server to store handlers with different request/response
+//! types in a single `HashMap<String, BoxedHandler>`.
+//!
+//! # Type Erasure Strategy
+//!
+//! User handlers are strongly typed functions:
+//! ```ignore
+//! async fn add(req: AddRequest) -> Result<AddResponse>
+//! ```
+//!
+//! These are wrapped into a common signature that operates on raw bytes:
+//! ```ignore
+//! Fn(Bytes) -> Future<Output = Result<Bytes>>
+//! ```
+//!
+//! The wrapper handles serialization/deserialization automatically, surfacing
+//! errors as [`RpcError::Serialization`] when payloads don't match the expected
+//! schema.
+
 use crate::{Result, RpcError};
 use bytes::Bytes;
 use serde::de::DeserializeOwned;
