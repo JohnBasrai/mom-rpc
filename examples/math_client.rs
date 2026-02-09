@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let broker_uri =
         std::env::var("BROKER_URI").unwrap_or_else(|_| "mqtt://localhost:1883".to_string());
 
-    let config = RpcConfig::with_broker(broker_uri, "math-client");
+    let config = RpcConfig::with_broker(&broker_uri, "math-client");
     let transport = create_transport(&config).await?;
 
     let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
