@@ -1,26 +1,20 @@
-//! Math RPC server example.
+//! Math RPC server example using a message broker.
 //!
-//! NOTE:
-//! This example is intended for brokered transports (MQTT).
-//! It cannot be used with MemoryTransport, which is in-process only.
+//! Demonstrates running an RPC server that listens for requests via MQTT broker.
 //!
 //! Run with: cargo run --example math_server --features transport_rumqttc
 //!
-//! Requires: an MQTT broker running on localhost:1883
+//! Requires: An MQTT broker running on localhost:1883
+//!
+//! Note: For Docker/production deployments, also handle SIGTERM:
+//! ```ignore
+//! use tokio::signal::unix::{signal, SignalKind};
+//! signal(SignalKind::terminate()).unwrap().recv().await;
+//! ```
+mod common;
 
+use common::{AddRequest, AddResponse};
 use mom_rpc::{create_transport, RpcConfig, RpcServer};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-struct AddRequest {
-    a: i32,
-    b: i32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct AddResponse {
-    sum: i32,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -46,13 +40,11 @@ async fn main() -> anyhow::Result<()> {
         tokio::signal::ctrl_c()
             .await
             .expect("failed to listen for Ctrl+C");
-        println!("math_server: Received Ctrl+C, shutting down...");
+        println!("Received Ctrl+C, shutting down...");
         server_clone.shutdown().await.expect("shutdown failed");
     });
 
     // Run server - blocks until shutdown() is called
-    // For Docker/production, also handle SIGTERM:
-    // tokio::signal::unix::signal(SignalKind::terminate())
     server.run().await?;
 
     transport.close().await?;
