@@ -204,12 +204,16 @@ mom-rpc = { version = "0.x", features = ["transport_rumqttc"] }
 ```
 
 **Basic broker usage:**
+
 ```rust
 // Server
 let config = RpcConfig::with_broker("mqtt://localhost:1883", "env-sensor-42");
 let transport = create_transport(&config).await?;
 let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
-server.register("read_temperature", |req: ReadTemperature| async move { /* ... */ });
+server.register(
+    "read_temperature",
+    |req: ReadTemperature| async move { /* ... */ },
+);
 server.run().await?;
 
 // Client
@@ -217,8 +221,13 @@ let config = RpcConfig::with_broker("mqtt://localhost:1883", "sensor-client");
 let transport = create_transport(&config).await?;
 let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
 let resp: SensorReading = client
-    .request_to("env-sensor-42", "read_temperature", ReadTemperature { unit: TemperatureUnit::Celsius })
-    .await?;
+    .request_to(
+        "env-sensor-42",
+        "read_temperature",
+        ReadTemperature {
+            unit: TemperatureUnit::Celsius,
+        },
+    ).await?;
 ```
 
 <details>

@@ -11,6 +11,9 @@ Early versions may include intentional refactors as semantics are clarified.
 - Replaced math-based examples with sensor-based examples to better reflect realistic RPC usage (finite domains, device-style request/response).
 - Updated manual MQTT and RabbitMQ test scripts to exercise the sensor examples.
 
+### Updated
+- Updated lapin to v4.0.0; adapted AMQP transport to use owned string parameters per new API.
+
 ### Notes
 - No public APIs were changed.
 
