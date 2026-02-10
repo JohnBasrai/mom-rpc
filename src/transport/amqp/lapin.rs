@@ -234,8 +234,8 @@ impl Actor {
         }
 
         // Close channel and connection
-        let _ = self.channel.close(200, "Normal shutdown").await;
-        let _ = self.connection.close(200, "Normal shutdown").await;
+        let _ = self.channel.close(200, "Normal shutdown".into()).await;
+        let _ = self.connection.close(200, "Normal shutdown".into()).await;
 
         log_info!("[{}] AMQP actor stopped", self.transport_id);
     }
@@ -274,8 +274,8 @@ impl Actor {
 
         self.channel
             .basic_publish(
-                "",    // default exchange
-                queue, // routing key = queue name
+                "".into(),    // default exchange
+                queue.into(), // routing key = queue name
                 BasicPublishOptions::default(),
                 &payload,
                 BasicProperties::default(),
@@ -300,7 +300,7 @@ impl Actor {
         };
 
         self.channel
-            .queue_declare(&queue, queue_opts, FieldTable::default())
+            .queue_declare(queue.clone().into(), queue_opts, FieldTable::default())
             .await
             .map_err(|e| RpcError::Transport(format!("amqp: queue declare failed: {e}")))?;
 
@@ -315,8 +315,8 @@ impl Actor {
         let consumer = self
             .channel
             .basic_consume(
-                &queue,
-                &format!("{}-consumer", self.transport_id),
+                queue.clone().into(),
+                format!("{}-consumer", self.transport_id).into(),
                 BasicConsumeOptions::default(),
                 FieldTable::default(),
             )

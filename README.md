@@ -68,21 +68,33 @@ This crate solves that by providing:
 Perfect for testing and single-process applications - no broker required:
 
 ```rust
-use mom_rpc::{create_transport, RpcClient, RpcConfig, RpcServer, Result};
+async fn main() {
+    //
+    use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
 
-let config = RpcConfig::memory("sensor");
-let transport = create_transport(&config).await?;
+    let config = RpcConfig::memory("sensor");
+    let transport = create_transport(&config).await?;
 
-let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
-server.register("read_temperature", |req: ReadTemperature| async move {
-    Ok(SensorReading { value: 21.5, unit: "C".to_string(), timestamp_ms: 0 })
-});
-let _handle = server.spawn();
+    let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
+    server.register("read_temperature", |req: ReadTemperature| async move {
+        Ok(SensorReading {
+            value: 21.5,
+            unit: "C".to_string(),
+            timestamp_ms: 0,
+        })
+    });
+    let _handle = server.spawn();
 
-let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
-let resp: SensorReading = client
-    .request_to("env-sensor-42", "read_temperature", ReadTemperature { unit: TemperatureUnit::Celsius })
-    .await?;
+    let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
+    let resp: SensorReading = client
+        .request_to(
+            "env-sensor-42",
+            "read_temperature",
+            ReadTemperature {
+                unit: TemperatureUnit::Celsius,
+            },
+        ).await?;
+}
 ```
 
 <details>
@@ -103,6 +115,7 @@ struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    //
     let config = RpcConfig::memory("sensor");
     let transport = create_transport(&config).await?;
 
