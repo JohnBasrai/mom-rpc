@@ -31,7 +31,7 @@ Tests AMQP transport implementations against a RabbitMQ broker.
 1. Starts RabbitMQ in Docker
 2. Builds math_server and math_client examples with specified feature
 3. Runs server in background
-4. Runs client and validates output contains "Result: 42"
+4. Runs client and validates output contains "2 + 3 = 5"
 5. Cleans up (kills server, stops container)
 
 **Management UI:**
@@ -39,13 +39,25 @@ Tests AMQP transport implementations against a RabbitMQ broker.
 - Username: `guest`
 - Password: `guest`
 
-### MQTT (planned)
+### MQTT
 
+Tests MQTT transport implementations against a Mosquitto broker.
+
+**Usage:**
 ```bash
 ./mqtt.sh transport_rumqttc
 ```
 
-Tests MQTT transport implementations against a Mosquitto broker.
+**Requirements:**
+- Docker installed and running
+- Port 1883 (MQTT) available
+
+**What it does:**
+1. Starts Mosquitto in Docker
+2. Builds math_server and math_client examples with specified feature
+3. Runs server in background
+4. Runs client and validates output contains "2 + 3 = 5"
+5. Cleans up (kills server, stops container)
 
 ## Design Principles
 
@@ -91,7 +103,7 @@ pkill -f math_server
 
 # Remove containers
 docker rm -f mom-rpc-test-rabbitmq
-docker rm -f mom-rpc-test-mqtt
+docker rm -f mom-rpc-test-mosquitto
 ```
 
 ## Adding New Tests

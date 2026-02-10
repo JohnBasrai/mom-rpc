@@ -161,22 +161,6 @@ impl Envelope {
     }
 }
 
-/// Options controlling message publication.
-///
-/// These options express delivery intent at the domain level. Concrete
-/// transports may ignore, approximate, or map these options onto their
-/// own mechanisms.
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-pub struct PublishOptions {
-    // ---
-    /// Whether the message should be treated as durable.
-    pub durable: bool,
-
-    /// Optional time-to-live for the message, in milliseconds.
-    pub ttl_ms: Option<u64>,
-}
-
 /// Handle returned from a successful subscription.
 ///
 /// The subscription remains active until the transport is closed.
@@ -222,7 +206,10 @@ pub trait Transport: Send + Sync {
     fn transport_id(&self) -> &str;
 
     /// Publish an envelope to the given address.
-    async fn publish(&self, env: Envelope, opts: PublishOptions) -> Result<()>;
+    ///
+    /// RPC semantics always use non-durable delivery with no TTL.
+    /// Transports implement their own default QoS settings for RPC patterns.
+    async fn publish(&self, env: Envelope) -> Result<()>;
 
     /// Register a subscription and return a handle for receiving messages.
     async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle>;

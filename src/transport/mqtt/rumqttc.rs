@@ -78,7 +78,6 @@ use tokio::task::JoinHandle;
 use crate::{
     //
     Envelope,
-    PublishOptions,
     Result,
     RpcConfig,
     RpcError,
@@ -542,7 +541,7 @@ impl Transport for RumqttcTransport {
         &self.transport_id
     }
 
-    async fn publish(&self, env: Envelope, _opts: PublishOptions) -> Result<()> {
+    async fn publish(&self, env: Envelope) -> Result<()> {
         // ---
 
         let (tx, rx) = oneshot::channel();

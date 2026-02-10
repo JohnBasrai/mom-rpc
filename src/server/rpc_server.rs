@@ -29,7 +29,6 @@ use crate::{
     // ---
     Address,
     Envelope,
-    PublishOptions,
     Result,
     RpcError,
     Subscription,
@@ -299,16 +298,7 @@ impl RpcServer {
             Arc::<str>::from("application/json"),
         );
 
-        self.inner
-            .transport
-            .publish(
-                env,
-                PublishOptions {
-                    durable: false,
-                    ttl_ms: None,
-                },
-            )
-            .await
+        self.inner.transport.publish(env).await
     }
 
     #[cfg(false)]

@@ -34,7 +34,6 @@ use crate::{
     // ---
     Address,
     Envelope,
-    PublishOptions,
     Result,
     RpcConfig,
     Subscription,
@@ -81,7 +80,7 @@ impl Transport for MemoryTransport {
     ///
     /// This behavior defines the reference matching semantics for the
     /// transport layer.
-    async fn publish(&self, env: Envelope, _opts: PublishOptions) -> Result<()> {
+    async fn publish(&self, env: Envelope) -> Result<()> {
         // ---
         let subs = self.subscriptions.read().await;
 

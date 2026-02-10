@@ -22,6 +22,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use bytes::Bytes;
 use serde::de::DeserializeOwned;
@@ -29,12 +30,12 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tokio::time;
 
 use crate::{
     // ---
     Address,
     Envelope,
-    PublishOptions,
     Result,
     RpcError,
     Subscription,
@@ -210,16 +211,7 @@ impl RpcClient {
             Arc::<str>::from("application/json"),
         );
 
-        self.inner
-            .transport
-            .publish(
-                env,
-                PublishOptions {
-                    durable: false,
-                    ttl_ms: None,
-                },
-            )
-            .await?;
+        self.inner.transport.publish(env).await?;
 
         let response = rx.await.map_err(|err| {
             let msg =
@@ -228,6 +220,59 @@ impl RpcClient {
         })?;
         let resp: TResp = serde_json::from_slice(&response)?;
         Ok(resp)
+    }
+
+    /// Send an RPC request with a timeout.
+    ///
+    /// This is a convenience wrapper around [`request_to`](Self::request_to) that
+    /// applies a timeout to the entire request/response cycle. If the timeout
+    /// expires before a response is received, returns [`RpcError::Timeout`].
+    ///
+    /// # Arguments
+    ///
+    /// - `target_node_id`: service identity (e.g., `"math-service"`)
+    /// - `method`: RPC method name
+    /// - `req`: request payload
+    /// - `timeout`: maximum time to wait for response
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use mom_rpc::{RpcClient, create_transport, RpcConfig};
+    /// # use serde::{Deserialize, Serialize};
+    /// # use std::time::Duration;
+    /// # #[derive(Serialize)] struct AddRequest { a: i32, b: i32 }
+    /// # #[derive(Deserialize)] struct AddResponse { sum: i32 }
+    /// # async fn example() -> mom_rpc::Result<()> {
+    /// let config = RpcConfig::memory("client");
+    /// let transport = create_transport(&config).await?;
+    /// let client = RpcClient::with_transport(transport, "client").await?;
+    ///
+    /// let resp: AddResponse = client
+    ///     .request_with_timeout(
+    ///         "math",
+    ///         "add",
+    ///         AddRequest { a: 2, b: 3 },
+    ///         Duration::from_secs(5),
+    ///     )
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn request_with_timeout<TReq, TResp>(
+        &self,
+        target_node_id: &str,
+        method: &str,
+        req: TReq,
+        timeout: Duration,
+    ) -> Result<TResp>
+    where
+        TReq: Serialize,
+        TResp: DeserializeOwned,
+    {
+        time::timeout(timeout, self.request_to(target_node_id, method, req))
+            .await
+            .map_err(|_| RpcError::Timeout)?
     }
 
     /// Internal hook used by the transport receive loop to dispatch responses.
@@ -241,8 +286,12 @@ impl RpcClient {
         };
 
         if let Some(tx) = tx {
-            // If the receiver is gone, that's fine; request_to will time out / drop.
-            let _ = tx.send(payload);
+            if tx.send(payload).is_err() {
+                #[cfg(feature = "logging")]
+                log::debug!(
+                    "response arrived after request abandoned (correlation_id: {correlation_id})"
+                );
+            }
         }
 
         Ok(())

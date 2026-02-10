@@ -328,6 +328,95 @@ async fn test_transport_disconnect() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_request_with_timeout_success() -> Result<()> {
+    #[cfg(feature = "logging")]
+    init_logging();
+
+    let config = RpcConfig::memory("test_timeout_success");
+    let transport = create_memory_transport(&config).await?;
+    let server = RpcServer::with_transport(transport.clone(), "timeout-math");
+
+    server.register("add", |req: AddRequest| async move {
+        // Fast handler - should complete before timeout
+        Ok(AddResponse { sum: req.a + req.b })
+    });
+
+    let handle = server.spawn();
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    let client = RpcClient::with_transport(transport.clone(), "timeout-client").await?;
+
+    // Request with generous timeout should succeed
+    let resp: AddResponse = client
+        .request_with_timeout(
+            "timeout-math",
+            "add",
+            AddRequest { a: 5, b: 3 },
+            Duration::from_secs(1),
+        )
+        .await?;
+
+    assert_eq!(resp.sum, 8);
+
+    server.shutdown().await?;
+    transport.close().await?;
+    handle.await.expect("server task panicked")?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_request_with_timeout_expires() -> Result<()> {
+    #[cfg(feature = "logging")]
+    init_logging();
+
+    let config = RpcConfig::memory("test_timeout_expires");
+    let transport = create_memory_transport(&config).await.unwrap();
+    let server = RpcServer::with_transport(transport.clone(), "slow-math");
+
+    server.register("add", |req: AddRequest| async move {
+        // Slow handler - intentionally longer than timeout
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        Ok(AddResponse { sum: req.a + req.b })
+    });
+
+    let handle = server.spawn();
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    let client = RpcClient::with_transport(transport.clone(), "timeout-client-2")
+        .await
+        .unwrap();
+
+    // Request with very short timeout should fail
+    let result: Result<AddResponse> = client
+        .request_with_timeout(
+            "slow-math",
+            "add",
+            AddRequest { a: 5, b: 3 },
+            Duration::from_millis(50), // Timeout before handler completes
+        )
+        .await;
+
+    match result {
+        Err(RpcError::Timeout) => {
+            // Expected - timeout occurred
+        }
+        Ok(_) => {
+            eprintln!("expected timeout but request succeeded");
+            return Err(RpcError::InvalidResponse);
+        }
+        Err(e) => {
+            println!("expected Timeout error but got: {e}");
+            return Err(RpcError::InvalidResponse);
+        }
+    }
+
+    server.shutdown().await?;
+    transport.close().await?;
+    handle.await.expect("server task panicked")?;
+    Ok(())
+}
+
 #[cfg(feature = "logging")]
 mod imp {
     use std::sync::Once;
