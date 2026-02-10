@@ -1,6 +1,6 @@
 [package]
 name = "mom-rpc"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 authors = ["John Basrai"]
 description = "Transport-agnostic async RPC over message-oriented middleware (AMQP, MQTT, in-memory)"
@@ -34,12 +34,16 @@ tokio        = { version = "1", features = ["signal"] }
 tokio-test   = "0.4"
 
 [[example]]
-name = "math_server"
-path = "examples/math_server.rs"
+name = "sensor_server"
+path = "examples/sensor_server.rs"
 
 [[example]]
-name = "math_client"
-path = "examples/math_client.rs"
+name = "sensor_client"
+path = "examples/sensor_client.rs"
+
+[[example]]
+name = "sensor_memory"
+path = "examples/sensor_memory.rs"
 
 [features]
 default = ["logging"]

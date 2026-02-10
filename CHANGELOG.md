@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
----
+## [0.6.1] - 2026-02-10
+
+### Changed
+- Replaced math-based examples with sensor-based examples to better reflect realistic RPC usage (finite domains, device-style request/response).
+- Updated manual MQTT and RabbitMQ test scripts to exercise the sensor examples.
+
+### Notes
+- No public APIs were changed.
 
 ## [0.6.0] - 2026-02-09
 
