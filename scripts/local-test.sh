@@ -36,7 +36,7 @@ echo ""
 # 2. Feature matrix testing
 echo "==> Feature Matrix"
 run_test "default features" "default"
-run_test "transport_rumqttc" "transport_rumqttc"
+run_test "rumqttc" "transport_rumqttc"
 run_test "no default features" "no-default-features"
 run_test "all features" "all-features"
 

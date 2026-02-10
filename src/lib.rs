@@ -8,7 +8,7 @@
 //!
 //! - **Memory** (default) - In-process testing transport, always available
 //! - **MQTT via rumqttc** - Recommended MQTT backend (enable `transport_rumqttc`)
-//! - **AMQP via lapin** - RabbitMQ and AMQP 0-9-1 brokers (enable `transport_amqp`)
+//! - **AMQP via lapin**   - RabbitMQ and AMQP 0-9-1 brokers (enable `transport_lapin`)
 //!
 //! # Quick Start
 //!
@@ -16,26 +16,38 @@
 //! use mom_rpc::{create_transport, RpcClient, RpcConfig, RpcServer, Result};
 //! use serde::{Deserialize, Serialize};
 //!
-//! #[derive(Serialize, Deserialize)]
-//! struct AddRequest { a: i32, b: i32 }
+//! #[derive(Debug, Serialize, Deserialize)]
+//! struct ReadTemperature { unit: TemperatureUnit }
 //!
-//! #[derive(Serialize, Deserialize)]
-//! struct AddResponse { sum: i32 }
+//! #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+//! enum TemperatureUnit { Celsius, Fahrenheit }
+//!
+//! #[derive(Debug, Serialize, Deserialize)]
+//! struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
-//!     let config = RpcConfig::memory("example");
+//!     //
+//!     let config = RpcConfig::memory("sensor");
 //!     let transport = create_transport(&config).await?;
 //!
-//!     let server = RpcServer::with_transport(transport.clone(), "math");
-//!     server.register("add", |req: AddRequest| async move {
-//!         Ok(AddResponse { sum: req.a + req.b })
+//!     let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
+//!     server.register("read_temperature", |req: ReadTemperature| async move {
+//!         let celsius = 22.0_f32; // Simulate reading hw sensor
+//!         let (value, unit) = match req.unit {
+//!             TemperatureUnit::Celsius => (celsius, "C"),
+//!             TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
+//!         };
+//!         Ok(SensorReading { value, unit: unit.to_string(), timestamp_ms: 0 })
 //!     });
 //!     let _handle = server.spawn();
 //!
-//!     let client = RpcClient::with_transport(transport.clone(), "client").await?;
-//!     let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3 }).await?;
-//!     assert_eq!(resp.sum, 5);
+//!     let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
+//!     let resp: SensorReading = client
+//!         .request_to("env-sensor-42", "read_temperature", ReadTemperature {
+//!             unit: TemperatureUnit::Celsius,
+//!         }).await?;
+//!     println!("Temperature: {} {}", resp.value, resp.unit);
 //!
 //!     Ok(())
 //! }
@@ -50,9 +62,9 @@
 //! # Examples
 //!
 //! See the `examples/` directory for complete working examples:
-//! - `math_memory.rs` - In-memory transport (no broker needed)
-//! - `math_server.rs` - MQTT server example
-//! - `math_client.rs` - MQTT client example
+//! - `sensor_memory.rs` - In-memory transport (no broker needed)
+//! - `sensor_server.rs` - MQTT/AMQP server example
+//! - `sensor_client.rs` - MQTT/AMQP client example
 
 // Import all sub modules once...
 mod client;
@@ -139,18 +151,12 @@ pub use domain::{
 pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
     #[cfg(feature = "transport_rumqttc")]
-    {
-        return create_rumqttc_transport(config).await;
-    }
+    return create_rumqttc_transport(config).await;
 
     #[cfg(all(feature = "transport_lapin", not(feature = "transport_rumqttc")))]
-    {
-        return create_lapin_transport(config).await;
-    }
+    return create_lapin_transport(config).await;
 
     // Fallback / default
     #[cfg(not(any(feature = "transport_rumqttc", feature = "transport_lapin")))]
-    {
-        create_memory_transport(config).await
-    }
+    create_memory_transport(config).await
 }

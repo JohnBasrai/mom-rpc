@@ -18,7 +18,7 @@ Transport-agnostic RPC behavior using in-memory transport:
 
 ### Integration Tests
 
-Full client ↔ server roundtrips with memory transport:
+Full client <--> server roundtrips with memory transport:
 
 - Full request/response cycles
 - Timeout behavior and error handling
@@ -66,9 +66,14 @@ tests/
   transport_memory.rs      # Memory transport specific tests
 
 scripts/
-  ci-lint.sh              # Formatting and clippy
-  ci-test.sh              # All tests + examples
-  start-mosquitto.sh      # Start MQTT broker
+  ci-docs.sh                # Checks documentation code blocks
+  ci-lint.sh                # Formatting and clippy
+  ci-test.sh                # All tests + examples
+  local-test.sh             # Local Testing Suite (mirrors CI)
+  pre-publish.sh            # Checks if ready to publish to crates.io
+  start-mosquitto.sh        # Start mosquitto MQTT broker for testing
+  manual-tests/amqp.sh      # AMQP Manual Integration Test
+  manual-tests/mqtt.sh      # MQTT Manual Integration Test
 ```
 
 ## Running Tests
@@ -78,7 +83,7 @@ scripts/
 ./scripts/ci-lint.sh
 
 # All tests (memory transport, no broker needed)
-cargo test
+./scripts/local-test.sh
 
 # Test specific features
 cargo test --features transport_rumqttc
@@ -97,40 +102,15 @@ cargo test test_concurrent_requests
 
 When testing RPC flows, ensure coverage of:
 
-- **Success paths** - Normal request/response
-- **Error responses** - Handler returns errors
-- **Timeout handling** - Requests that don't complete
-- **Concurrent requests** - Multiple in-flight from same client
-- **Multiple clients** - Simultaneous clients to same server
-- **Transport disconnection** - What happens when transport fails
-- **Correlation matching** - Multiple in-flight requests don't mix
-
-## Example Test Structure
-
-```rust
-#[tokio::test]
-async fn test_concurrent_requests() {
-    // Setup
-    let transport = create_memory_transport().await.unwrap();
-    let server = RpcServer::with_transport(transport.clone(), "test");
-    let client = RpcClient::with_transport(transport.clone(), "client").await.unwrap();
-    
-    // Register handler
-    server.register("echo", |req: String| async move {
-        Ok(req)
-    });
-    
-    // Test concurrent requests
-    let req1 = client.request("test", "echo", "msg1".to_string());
-    let req2 = client.request("test", "echo", "msg2".to_string());
-    
-    let (resp1, resp2) = tokio::join!(req1, req2);
-    
-    // Verify
-    assert_eq!(resp1.unwrap(), "msg1");
-    assert_eq!(resp2.unwrap(), "msg2");
-}
-```
+|  Test Topic                 | What is tested          |
+|:----------------------------|:------------------------|
+| **Success paths**           | Normal request/response |
+| **Error responses**         | Handler returns errors  |
+| **Timeout handling**        | Requests that don't complete |
+| **Concurrent requests**     | Multiple in-flight from same client |
+| **Multiple clients**        | Simultaneous clients to same server |
+| **Transport disconnection** | What happens when transport fails |
+| **Correlation matching**    | Multiple in-flight requests don't mix |
 
 ## Test Guidelines
 
@@ -151,7 +131,7 @@ When implementing a new transport:
 4. Add transport-specific failure mode tests
 5. Gate tests with feature flag
 
-Reference implementation: Memory transport (`src/transport/memory/`)
+Reference implementation: Memory transport (`src/transport/memory.rs`)
 
 ## Dependencies in Tests
 
@@ -159,8 +139,12 @@ Test dependencies in `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-tokio-test = "0.4"
-futures = "0.3"
+anyhow       = "1.0"
+env_logger   = "0.11"
+futures      = "0.3.31"
+tokio        = { version = "1", features = ["signal"] }
+tokio-test   = "0.4"
+
 ```
 
 Keep test dependencies minimal and well-maintained.

@@ -173,7 +173,7 @@ impl RpcClient {
 
     /// Send an RPC request to a target service node.
     ///
-    /// - `target_node_id`: service identity (e.g., `"math-service"`)
+    /// - `target_node_id`: service identity (e.g., `"sensor-service"`)
     /// - `method`: RPC method name
     /// - `req`: request payload
     pub async fn request_to<TReq, TResp>(
@@ -230,7 +230,7 @@ impl RpcClient {
     ///
     /// # Arguments
     ///
-    /// - `target_node_id`: service identity (e.g., `"math-service"`)
+    /// - `target_node_id`: service identity (e.g., `"sensor-service"`)
     /// - `method`: RPC method name
     /// - `req`: request payload
     /// - `timeout`: maximum time to wait for response
@@ -241,18 +241,26 @@ impl RpcClient {
     /// # use mom_rpc::{RpcClient, create_transport, RpcConfig};
     /// # use serde::{Deserialize, Serialize};
     /// # use std::time::Duration;
-    /// # #[derive(Serialize)] struct AddRequest { a: i32, b: i32 }
-    /// # #[derive(Deserialize)] struct AddResponse { sum: i32 }
+    /// #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+    /// pub enum TemperatureUnit { Celsius, Fahrenheit }
+    /// #[derive(Debug, Clone, Serialize, Deserialize)]
+    /// pub struct ReadTemperature { pub unit: TemperatureUnit }
+    /// #[derive(Debug, Clone, Serialize, Deserialize)]
+    /// pub struct SensorReading {
+    ///     pub value: f32,
+    ///     pub unit: String,
+    ///     pub timestamp_ms: u64,
+    /// }
     /// # async fn example() -> mom_rpc::Result<()> {
     /// let config = RpcConfig::memory("client");
     /// let transport = create_transport(&config).await?;
     /// let client = RpcClient::with_transport(transport, "client").await?;
     ///
-    /// let resp: AddResponse = client
+    /// let resp: SensorReading = client
     ///     .request_with_timeout(
-    ///         "math",
-    ///         "add",
-    ///         AddRequest { a: 2, b: 3 },
+    ///         "env-sensor-42",
+    ///         "read_temperature",
+    ///         ReadTemperature { unit: TemperatureUnit::Celsius },
     ///         Duration::from_secs(5),
     ///     )
     ///     .await?;

@@ -99,7 +99,7 @@ Transports are organized by **protocol → library** hierarchy:
 ```
 transport/
 ├── mod.rs
-├── memory.rs              # Flat - always available, brokerless
+├── memory.rs             # Flat - always available, brokerless
 ├── mqtt/
 │   ├── mod.rs            # Protocol gateway (EMBP)
 │   └── rumqttc.rs        # MQTT via rumqttc library
@@ -152,9 +152,7 @@ It:
 
 ### Reference Semantics
 
-All other transports are expected to **approximate the memory transport's behavior as closely as their underlying system allows**.
-
-In particular:
+Each brokered transport was derived from its predecessor, which structurally reinforces behavioral consistency rather than merely aspiring to it. That consistency targets the following reference semantics:
 
 * No message replay on subscribe
 * Fanout delivers messages to all subscribers

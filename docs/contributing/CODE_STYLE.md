@@ -42,7 +42,7 @@ struct MemoryTransport {
 impl Transport for MemoryTransport {
     // ---
     fn transport_id(&self) -> &str {
-        self.transport_id.as_str()
+        self.transport_id.as_str()    // Trivial function not required
     }
 
     async fn publish(&self, env: Envelope) -> Result<()> {
@@ -88,7 +88,7 @@ mod tests {
     #[tokio::test]
     async fn test_subscription_delivery() {
         // ---
-        // test body
+        ... test body
     }
 }
 ```
@@ -96,7 +96,8 @@ mod tests {
 ## Style Guidelines
 
 1. Use `// ---` for visual separation after opening braces
-2. Place separator before the first meaningful line
+2. Place separator right after the line with open brace
+   - Adding extra blank line after // --- is Ok too.
 3. Use between meaningful logical steps within function bodies
 4. **Do NOT** use separators between fields in struct literals
 5. Keep separators consistent across the codebase

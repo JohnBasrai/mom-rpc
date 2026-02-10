@@ -155,7 +155,7 @@ echo ""
 echo "==> Running sensor_client..."
 
 
-cargo --quiet run --example sensor_client --features "$FEATURE" 2>&1 |& tee client.log
+cargo --quiet run --example sensor_client --features "$FEATURE" >& client.log
 
 if grep -q  "Temperature" client.log && \
    grep -q  "Humidity"    client.log && \
