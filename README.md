@@ -7,7 +7,7 @@
 
 **Transport-agnostic async RPC over message-oriented middleware.**
 
-This crate provides a clean, strongly-typed RPC abstraction on top of unreliable or awkward pub/sub systems (such as MQTT), without baking transport details into your application code.
+This crate provides a clean, strongly-typed RPC abstraction on top of unreliable or awkward pub/sub systems (such as MQTT or AMQP), without baking transport details into your application code.
 
 It is designed to *tame* message brokers, not expose them.
 
@@ -22,7 +22,7 @@ While this crate supports multiple transport implementations, **applications onl
 
 ## Why this exists
 
-Message-oriented middleware (MQTT, pub/sub systems, etc.) is great for decoupling — but painful for request/response workflows:
+Message-oriented middleware (pub/sub systems, etc.) is great for decoupling — but painful for request/response workflows:
 
 * no native RPC semantics
 * no correlation handling
@@ -68,39 +68,6 @@ This crate solves that by providing:
 Perfect for testing and single-process applications - no broker required:
 
 ```rust
-async fn main() {
-    //
-    use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
-
-    let config = RpcConfig::memory("sensor");
-    let transport = create_transport(&config).await?;
-
-    let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
-    server.register("read_temperature", |req: ReadTemperature| async move {
-        Ok(SensorReading {
-            value: 21.5,
-            unit: "C".to_string(),
-            timestamp_ms: 0,
-        })
-    });
-    let _handle = server.spawn();
-
-    let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
-    let resp: SensorReading = client
-        .request_to(
-            "env-sensor-42",
-            "read_temperature",
-            ReadTemperature {
-                unit: TemperatureUnit::Celsius,
-            },
-        ).await?;
-}
-```
-
-<details>
-<summary><b>View complete memory example</b></summary>
-
-```rust
 use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
 use serde::{Deserialize, Serialize};
 
@@ -115,25 +82,21 @@ struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    //
     let config = RpcConfig::memory("sensor");
     let transport = create_transport(&config).await?;
 
     let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
-
     server.register("read_temperature", |req: ReadTemperature| async move {
-        let celsius = 22.0_f32;
+        let celsius = 21.5_f32; // Simulate reading hw sensor
         let (value, unit) = match req.unit {
             TemperatureUnit::Celsius => (celsius, "C"),
             TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
         };
         Ok(SensorReading { value, unit: unit.to_string(), timestamp_ms: 0 })
     });
-
     let _handle = server.spawn();
 
     let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
-
     let resp: SensorReading = client
         .request_to(
             "env-sensor-42",
@@ -146,8 +109,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 ```
-
-</details>
 
 **Run it:**
 ```bash
@@ -162,7 +123,7 @@ cargo run --example sensor_memory
 <summary><b>Expected test output</b></summary>
 
 ```bash
-./scripts/manual-tests/rabbitmq.sh transport_lapin
+./scripts/manual-tests/amqp.sh transport_lapin
 ==> Checking prerequisites...
 ==> Starting RabbitMQ broker...
     Container: mom-rpc-test-rabbitmq
@@ -175,7 +136,7 @@ cargo run --example sensor_memory
     ✓ Examples built successfully
 
 ==> Starting sensor_server...
-    Server PID: 272977
+    Server PID: 784650
     Waiting for server to initialize...
     ✓ Server running
 
@@ -185,10 +146,13 @@ cargo run --example sensor_memory
 
 Feature tested: transport_lapin
 Broker URI: amqp://localhost:5672/%2f
-Output:2 + 3 = 5
+Output:
+Temperature: 21.5 C @ 1770741387954
+Humidity:    55 % @ 1770741387997
+Pressure:    101.3 kPa @ 1770741388039
 
 ==> Cleaning up...
-Killing server (PID: 272977)...
+Killing server (PID: 784650)...
 Stopping RabbitMQ container...
 ```
 </details>
@@ -224,10 +188,9 @@ let resp: SensorReading = client
     .request_to(
         "env-sensor-42",
         "read_temperature",
-        ReadTemperature {
-            unit: TemperatureUnit::Celsius,
-        },
-    ).await?;
+        ReadTemperature { unit: TemperatureUnit::Celsius },
+    )
+    .await?;
 ```
 
 <details>
@@ -260,7 +223,7 @@ async fn main() -> anyhow::Result<()> {
     let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
 
     server.register("read_temperature", |req: ReadTemperature| async move {
-        let celsius = 21.5_f32;
+        let celsius = 21.5_f32; // Simulate reading hw sensor
         let (value, unit) = match req.unit {
             TemperatureUnit::Celsius => (celsius, "C"),
             TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
@@ -391,7 +354,7 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
   - Active maintenance and modern async patterns
 
   ```toml
-  mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
+  mom-rpc = { version = "0.x", features = ["transport_rumqttc"] }
   ```
 
 Additional transports may be added in the future behind feature flags.
@@ -400,29 +363,27 @@ Additional transports may be added in the future behind feature flags.
 
 ## Feature flags
 
-| Flag                 | Description               | Status       |
-|:---------------------|:--------------------------|:-------------|
-| `transport_rumqttc`  | MQTT via rumqttc          | ✅ Available |
-| `transport_lapin`    | AMQP via lapin (RabbitMQ) | ✅ Available |
-| `logging`            | Enable logging output     | ✅ Default   |
+| Flag                 | Description               | Default Enable |
+|:---------------------|:--------------------------|:---------------|
+| `transport_rumqttc`  | MQTT via rumqttc          | ❌ No          |
+| `transport_lapin`    | AMQP via lapin (RabbitMQ) | ❌ No          |
+| `logging`            | Enable logging output     | ✅ Yes         |
 
-The **memory transport is always available** - no feature flag required.
+👉 The **memory transport is always available** - no feature flag required.
 
 ### Choosing Features
 
 **For production MQTT deployments:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.x", features = ["transport_rumqttc"] }
 ```
 
 **For testing without a broker:**
 ```toml
 [dependencies]
-mom-rpc = "0.4"  # Memory transport included by default
+mom-rpc = "0.x"  # Memory transport included by default
 ```
-
-**Note:** If multiple transport features are enabled, `transport_rumqttc` takes priority, then memory as fallback.
 
 ---
 
@@ -476,7 +437,7 @@ For details, see `docs/architecture.md`.
 
 ## Security
 
-The `rumqttc` transport supports TLS but delegates certificate validation and connection security to the broker. Transport security is intentionally treated as an external concern to avoid coupling RPC semantics to cryptographic policy.
+The `rumqttc` and `lapin` transports support TLS but delegate certificate validation and connection security to the broker. Transport security is intentionally treated as an external concern to avoid coupling RPC semantics to cryptographic policy.
 
 <details>
 <summary><b>Security best practices</b></summary>

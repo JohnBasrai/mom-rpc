@@ -1,6 +1,6 @@
 # Architecture Guidelines
 
-This project uses the [Explicit Module Boundary Pattern (EMBP)](https://github.com/JohnBasrai/architecture-patterns/blob/main/rust/embp.md) for module organization.
+This project uses the [Explicit Module Boundary Pattern (EMBP)](https://github.com/JohnBasrai/architecture-patterns/blob/350e668f/rust/embp.md) for module organization.
 
 **Please review the EMBP documentation before making structural changes.**
 
@@ -57,34 +57,7 @@ Transports are organized by **protocol → library** hierarchy:
 
 ## Import Guidelines
 
-### From Parent Module
-
-```rust
-// In src/client/pending.rs
-use super::RpcClient;  // From src/client/mod.rs
-```
-
-### From Sibling Module
-
-```rust
-// In src/client/mod.rs
-use super::correlation::CorrelationId;  // From src/correlation.rs
-```
-
-### From Child Module
-
-```rust
-// In src/transport/mod.rs
-mod memory;
-pub use memory::create_transport as create_memory_transport;
-```
-
-### From Domain
-
-```rust
-// Any module importing domain types
-use crate::domain::{Transport, Envelope, Address};
-```
+For import guidelines see the _EMBP documentation_ linked at the top of this document.
 
 ## Module Responsibilities
 
@@ -121,33 +94,37 @@ When adding a new module:
 
 ## Adding New Transport
 
-Transports are organized by **protocol → library**. When adding a new transport:
+Transports are organized by **protocol → library**. Use an existing transport as a template — `lapin` was derived directly from `rumqttc`, which is the recommended starting point. This approach structurally enforces the reference semantics rather than requiring the implementer to reconstruct them from scratch.
 
 ### Adding First Implementation for a New Protocol
 
 1. Create protocol directory: `src/transport/kafka/`
-2. Create protocol gateway: `src/transport/kafka/mod.rs`
-3. Create library implementation: `src/transport/kafka/rdkafka.rs`
-4. Add feature flag: `transport_rdkafka = ["rdkafka"]`
-5. Update top-level gateway: `src/transport/mod.rs`
+2. Create protocol gateway:   `src/transport/kafka/mod.rs`
+3. Create new transport implementation: `src/transport/kafka/rdkafka.rs`
+4. Update Cargo.toml / add feature flag: `transport_rdkafka = ["rdkafka"]`
+5. Update transport-level gateway: `src/transport/mod.rs`
+6. Update lib.rs `src/lib.rs`
+7. Update tests `scripts/local-test.sh`
 
-Example protocol gateway (`src/transport/kafka/mod.rs`):
+---
+
+1,2. Create protocol directory and gateway (`src/transport/kafka/mod.rs`):
 
 ```rust
 //! Kafka protocol transports.
 //!
 //! This module contains transport implementations for Kafka brokers.
 //! Currently supports:
-//! - rdkafka - Kafka via rdkafka library
+//! - rdkafka - Kafka via rdkafka library (rdkafka.rs)
 
 #[cfg(feature = "transport_rdkafka")]
 mod rdkafka;
 
 #[cfg(feature = "transport_rdkafka")]
-pub use rdkafka::create_transport as create_rdkafka_transport;
+pub use rdkafka::create_transport as create_rdkafka_transport; // rename to avoid collision
 ```
 
-Example library implementation (`src/transport/kafka/rdkafka.rs`):
+3. Create new transport implementation (`src/transport/kafka/rdkafka.rs`):
 
 ```rust
 //! Kafka transport implementation using rdkafka.
@@ -159,7 +136,18 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
 }
 ```
 
-Update top-level gateway (`src/transport/mod.rs`):
+4. Update Cargo.toml / add feature flag
+
+```
+[dependencies]
+rdkafka = { version = "0.39", optional = true }
+libc    = { version = "0.2",  optional = true } # transitive dependency of rdkafka
+
+[features]
+transport_rdkafka = ["rdkafka", "libc"]
+```
+
+5. Update transport-level gateway (`src/transport/mod.rs`):
 
 ```rust
 #[cfg(feature = "transport_rdkafka")]
@@ -169,52 +157,71 @@ mod kafka;
 pub use kafka::create_rdkafka_transport;
 ```
 
+6. Update lib.rs:
+
+```rust
+#[cfg(feature = "transport_rdkafka")]
+pub use transport::create_rdkafka_transport;
+
+// Update feature guards in this method
+pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
+    // ---
+    #[cfg(feature = "transport_rumqttc")]
+    { return create_rumqttc_transport(config).await; }
+
+    #[cfg(all(feature = "transport_lapin", not(feature = "transport_rumqttc")))]
+    { return create_lapin_transport(config).await; }
+
+    #[cfg(all(feature = "transport_rdkafka",           // <-- NEW
+              not(any(feature = "transport_rumqttc",   // <-- NEW
+                      feature = "transport_lapin"))))] // <-- NEW
+    { return create_rdkafka_transport(config).await; } // <-- NEW
+
+    #[cfg(not(any(feature = "transport_rumqttc",
+                  feature = "transport_lapin",
+                  feature = "transport_rdkafka")))]    // <-- NEW
+    { create_memory_transport(config).await }
+}
+```
+
+7. Update tests `scripts/local-test.sh`
+
+```
+# 2. Feature matrix testing
+echo "==> Feature Matrix"
+run_test "default features" "default"
+run_test "rumqttc" "transport_rumqttc"
+run_test "rdkafka" "transport_rdkafka"  # <-- Add rdkafka
+run_test "no default features" "no-default-features"
+run_test "all features" "all-features"
+```
+
 ### Adding Second Implementation for Existing Protocol
 
 If a protocol directory already exists (e.g., `mqtt/`), just add the new library:
 
-1. Create library implementation: `src/transport/mqtt/paho.rs`
-2. Add feature flag: `transport_paho = ["paho-mqtt"]`
-3. Update protocol gateway: `src/transport/mqtt/mod.rs`
-
-Example update to protocol gateway:
-
-```rust
-//! MQTT protocol transports.
-
-#[cfg(feature = "transport_rumqttc")]
-mod rumqttc;
-
-#[cfg(feature = "transport_paho")]
-mod paho;
-
-#[cfg(feature = "transport_rumqttc")]
-pub use rumqttc::create_transport as create_rumqttc_transport;
-
-#[cfg(feature = "transport_paho")]
-pub use paho::create_transport as create_paho_transport;
-```
-
-Update top-level gateway to export both:
-
-```rust
-#[cfg(feature = "transport_rumqttc")]
-pub use mqtt::create_rumqttc_transport;
-
-#[cfg(feature = "transport_paho")]
-pub use mqtt::create_paho_transport;
-```
+| Step/Action | Step from previous section  |
+|--------------------------------------|----|
+| 1. Update protocol gateway           | 2  (file exists)|
+| 2. Create transport implementation:  | 3  (directory exists)|
+| 3. Update Cargo.toml / add feat flag | 4  |
+| 4. Update transport-level gateway:   | 5  |
+| 5. Update src/lib.rs:                | 6  |
+| 6. Update tests:                     | 7  |
 
 ### Feature Naming Convention
 
 Features are named after the **library**, not the protocol:
 
-- ✅ `transport_rumqttc` (library name)
-- ✅ `transport_lapin` (library name)
-- ✅ `transport_paho` (library name)
-- ❌ `transport_mqtt` (too generic)
-- ❌ `transport_amqp` (too generic)
+| Feature name        | Rationale         |
+|:--------------------|:------------------|
+| `transport_rumqttc` | ✅ (library name) |
+| `transport_lapin`   | ✅ (library name) |
+| `transport_paho`    | ✅ (library name) |
+| `transport_mqtt`    | ❌ (too generic)  |
+| `transport_amqp`    | ❌ (too generic)  |
 
+Note: Protocol is not needed in the feature name because crates.io will enforce uniqueness of library names.
 This allows multiple implementations per protocol without naming conflicts.
 
 ## Testing Module Structure
@@ -226,7 +233,7 @@ Each module can have its own tests:
 mod tests {
     // ---
     use super::*;
-    
+
     #[test]
     fn test_something() {
         // test

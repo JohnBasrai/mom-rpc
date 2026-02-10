@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# RabbitMQ Manual Integration Test
+# AMQP Manual Integration Test
 #
 # Tests AMQP transport implementations against a real RabbitMQ broker.
 # Multiple AMQP libraries can use the same script by passing different feature flags.
 #
-# Usage: ./rabbitmq.sh <feature-flag>
-# Example: ./rabbitmq.sh transport_lapin
+# Usage: ./amqp.sh <feature-flag>
+# Example: ./amqp.sh transport_lapin
 
 FEATURE="${1:-}"
 CONTAINER_NAME="mom-rpc-test-rabbitmq"
@@ -156,13 +156,13 @@ echo "    ✓ Server running"
 echo ""
 echo "==> Running sensor_client..."
 
-cargo --quiet run --example sensor_client --features "$FEATURE" 2>&1 |& tee client.log
+cargo --quiet run --example sensor_client --features "$FEATURE" >& client.log
 
 if grep -q  "Temperature" client.log && \
    grep -q  "Humidity"    client.log && \
    grep -q  "Pressure"    client.log  ; then
     echo ""
-    echo "✅ RabbitMQ integration test PASSED"
+    echo "✅ AMQP integration test PASSED"
     echo ""
     echo "Feature tested: $FEATURE"
     echo "Broker URI: $BROKER_URI"
@@ -171,7 +171,7 @@ if grep -q  "Temperature" client.log && \
     exit 0
 else
     echo ""
-    echo "❌ RabbitMQ integration test FAILED"
+    echo "❌ AMQP integration test FAILED"
     echo ""
     echo "Expected output not found"
     echo ""

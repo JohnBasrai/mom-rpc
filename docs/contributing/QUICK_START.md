@@ -39,6 +39,8 @@ cargo test --lib
 cargo test
 ```
 
+Also browse the testing scripts in `scripts/` dirctory.
+
 ## Testing Feature Combinations
 
 This crate supports optional features:
@@ -57,8 +59,6 @@ cargo build --all-features
 ## Cross-Compilation
 
 This library is cross-platform and suitable for embedded/edge deployments. Cross-compilation and platform-specific concerns are handled at the consuming crate level.
-
-Once this crate stabilizes, [rust-edge-agent](https://github.com/JohnBasrai/rust-edge-agent) will be refactored to use mom-rpc as a reference example.
 
 ## Next Steps
 

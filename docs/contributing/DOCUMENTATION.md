@@ -45,10 +45,6 @@ For RPC and messaging code, doc comments should explicitly describe:
 /// - Request serialization fails
 /// - Publish fails
 ///
-/// # Timeouts
-///
-/// Timeouts are handled at the application layer. Consider using
-/// `tokio::time::timeout()` when awaiting the returned future.
 pub async fn request<Req, Resp>(&self, service: &str, method: &str, payload: &Req) 
     -> Result<Resp>
 where

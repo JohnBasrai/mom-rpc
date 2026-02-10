@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
+## [0.6.2] - 2026-02-10
+
+### Fixed
+
+- Quick Start example in `lib.rs` was stale math example — replaced with sensor example
+- `request_with_timeout` doc example missing `TemperatureUnit` enum definition
+- Feature flag name `transport_amqp` → `transport_lapin` in `lib.rs` doc comment
+
+### Changed
+
+- Renamed `scripts/manual-tests/rabbitmq.sh` → `amqp.sh` (protocol-first naming convention)
+- Updated ARCHITECTURE.md: transport derivation lineage, pinned EMBP link, removed misleading multi-transport priority note
+- Feature flags table: clearer "Default Enable" column with ✅/❌ indicators
+- RabbitMQ expected test output updated to match actual sensor output
+- Security section now mentions both `rumqttc` and `lapin` transports
+- Version references in README updated from `0.4` to `0.x`
+
 ## [0.6.1] - 2026-02-10
 
 ### Changed

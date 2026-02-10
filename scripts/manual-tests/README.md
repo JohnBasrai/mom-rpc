@@ -14,13 +14,13 @@ CI continues to use the fast, reliable memory transport for automated testing.
 
 ## Available Tests
 
-### RabbitMQ (AMQP)
+### AMQP
 
 Tests AMQP transport implementations against a RabbitMQ broker.
 
 **Usage:**
 ```bash
-./rabbitmq.sh transport_lapin
+./amqp.sh transport_lapin
 ```
 
 **Requirements:**
@@ -61,25 +61,25 @@ Tests MQTT transport implementations against a Mosquitto broker.
 
 ## Design Principles
 
-### Organized by Broker, Not Library
+### Organized by Protocol, Not Library
 
-Scripts are organized by **broker type** because:
+Scripts are organized by **protocol type** because:
 - Multiple libraries may implement the same protocol
 - Test logic is the same regardless of which library is used
 - Reduces duplication
 
 For example:
-- `rabbitmq.sh` can test `transport_lapin` or any future AMQP library
+- `amqp.sh` can test `transport_lapin` or any future AMQP library
 - `mqtt.sh` can test `transport_rumqttc`, `transport_paho`, etc.
 
 ### Feature Flag as Parameter
 
 Each script takes a feature flag as a parameter:
 ```bash
-./rabbitmq.sh transport_lapin          # Test lapin
-./rabbitmq.sh transport_another_amqp   # Future: test another AMQP lib
-./mqtt.sh transport_rumqttc            # Test rumqttc
-./mqtt.sh transport_paho               # Future: test paho
+./amqp.sh transport_lapin          # Test lapin
+./amqp.sh transport_another_amqp   # Future: test another AMQP lib
+./mqtt.sh transport_rumqttc        # Test rumqttc
+./mqtt.sh transport_paho           # Future: test paho
 ```
 
 This allows testing multiple implementations without duplicating test logic.
@@ -108,9 +108,9 @@ docker rm -f mom-rpc-test-mosquitto
 
 ## Adding New Tests
 
-To add a test for a new broker type:
+To add a test for a new protocol type:
 
-1. Create `scripts/manual-tests/broker_name.sh`
+1. Create `scripts/manual-tests/<protocol-name>.sh`
 2. Follow the pattern from existing scripts:
    - Accept feature flag as `$1`
    - Check prerequisites (Docker, cargo)
@@ -118,7 +118,7 @@ To add a test for a new broker type:
    - Build and run examples
    - Validate output
    - Clean up via trap
-3. Make executable: `chmod +x broker_name.sh`
+3. Make executable: `chmod +x <protocol-name>.sh`
 4. Update this README
 
 ## Notes

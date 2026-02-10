@@ -1,4 +1,4 @@
-use crate::protocol::CorrelationId;
+use super::CorrelationId;
 use bytes::Bytes;
 use std::collections::HashMap;
 use tokio::sync::oneshot;
