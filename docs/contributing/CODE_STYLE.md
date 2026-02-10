@@ -23,7 +23,6 @@ use crate::{
     // ---
     Address,
     Envelope,
-    PublishOptions,
     Result,
 };
 ```
@@ -46,7 +45,7 @@ impl Transport for MemoryTransport {
         self.transport_id.as_str()
     }
 
-    async fn publish(&self, env: Envelope, _opts: PublishOptions) -> Result<()> {
+    async fn publish(&self, env: Envelope) -> Result<()> {
         // ---
         let subs = self.subscriptions.read().await;
 
