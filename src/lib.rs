@@ -91,7 +91,6 @@ pub use domain::{
     //
     Address,
     Envelope,
-    PublishOptions,
     Subscription,
     SubscriptionHandle,
     Transport,

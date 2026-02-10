@@ -8,7 +8,6 @@ use mom_rpc::{
     Address,
     CorrelationId,
     Envelope,
-    PublishOptions,
     RpcConfig,
 };
 
@@ -44,16 +43,7 @@ async fn memory_subscribe_then_publish_delivers() {
     // ---
     // Act
     // ---
-    transport
-        .publish(
-            env,
-            PublishOptions {
-                durable: false,
-                ttl_ms: None,
-            },
-        )
-        .await
-        .expect("publish failed");
+    transport.publish(env).await.expect("publish failed");
 
     // ---
     // Assert

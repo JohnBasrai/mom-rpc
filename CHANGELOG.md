@@ -6,6 +6,28 @@ This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
 ---
+
+## [0.6.0] - 2026-02-09
+
+### Added
+
+- **MQTT manual integration test** - `scripts/manual-tests/mqtt.sh` for testing `transport_rumqttc` against real Mosquitto broker
+- **Timeout convenience method** - `RpcClient::request_with_timeout()` for simpler timeout handling
+
+### Changed (BREAKING)
+
+- **Removed `PublishOptions`** - Simplified `Transport::publish()` to remove unused options parameter
+  - RPC semantics always use non-durable delivery with no TTL
+  - **Breaking:** Custom `Transport` implementations must update `publish()` signature
+  - **Non-breaking:** Public API users (`RpcClient`, `RpcServer`) are unaffected
+
+### Documentation
+
+- Updated timeout handling section in README to feature `request_with_timeout` method
+- Added comprehensive tests for timeout functionality
+
+---
+
 ## [0.5.3] - Unreleased
 
 ### Changed

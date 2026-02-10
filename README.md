@@ -382,27 +382,23 @@ mom-rpc = "0.4"  # Memory transport included by default
 
 ## Timeout Handling
 
-The RPC layer does not impose timeouts. Use `tokio::time::timeout` to add them:
-
-<details>
-<summary><b>Show timeout example</b></summary>
+Use the built-in `request_with_timeout` method for convenient timeout handling:
 
 ```rust
-use tokio::time::{timeout, Duration};
+use std::time::Duration;
 
-let result = timeout(
-    Duration::from_secs(5),
-    client.request_to("service", "method", request)
-).await;
+// Recommended: built-in timeout method
+let response: MyResponse = client
+    .request_with_timeout(
+        "service",
+        "method",
+        request,
+        Duration::from_secs(5),
+    )
+    .await?;
 
-match result {
-    Ok(Ok(response)) => { /* success */ }
-    Ok(Err(e)) => { /* RPC error */ }
-    Err(_) => { /* timeout */ }
-}
+// Returns RpcError::Timeout if request exceeds timeout
 ```
-
-</details>
 
 ---
 

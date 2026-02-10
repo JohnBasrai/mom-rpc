@@ -15,7 +15,6 @@ pub use transport::{
     //
     Address,
     Envelope,
-    PublishOptions,
     Subscription,
     SubscriptionHandle,
     Transport,
