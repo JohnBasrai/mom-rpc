@@ -9,7 +9,7 @@ This is a pure Rust library crate providing RPC semantics over message-oriented 
 The quickest way to get started:
 
 ```bash
-cargo run --example math_memory
+cargo run --example sensor_memory
 ```
 
 This example demonstrates the full RPC lifecycle with client and server in a single process.
@@ -21,13 +21,13 @@ This example demonstrates the full RPC lifecycle with client and server in a sin
 ./scripts/start-mosquitto.sh
 
 # Terminal 2: Start server
-cargo run --example math_server --features transport_rumqttc
+cargo run --example sensor_server --features transport_rumqttc
 
 # Terminal 3: Send requests
-cargo run --example math_client --features transport_rumqttc
+cargo run --example sensor_client --features transport_rumqttc
 ```
 
-**Note:** The `math_server` and `math_client` examples require an external broker and cannot use the in-memory transport.
+**Note:** The `sensor_server` and `sensor_client` examples require an external broker and cannot use the in-memory transport.
 
 ## Running Tests
 

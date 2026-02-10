@@ -16,8 +16,8 @@ cargo doc --all-features --no-deps 2>&1 | grep "warning.*missing documentation" 
 
 # Verify examples compile (they should also serve as documentation)
 echo "    Verifying examples compile..."
-cargo build --example math_memory --quiet
-cargo build --example math_server --features transport_rumqttc --quiet
-cargo build --example math_client --features transport_rumqttc --quiet
+cargo build --example sensor_memory --quiet
+cargo build --example sensor_server --features transport_rumqttc --quiet
+cargo build --example sensor_client --features transport_rumqttc --quiet
 
 echo "✅ Documentation OK"

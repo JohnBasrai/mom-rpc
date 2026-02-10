@@ -29,9 +29,9 @@ Tests AMQP transport implementations against a RabbitMQ broker.
 
 **What it does:**
 1. Starts RabbitMQ in Docker
-2. Builds math_server and math_client examples with specified feature
+2. Builds sensor_server and sensor_client examples with specified feature
 3. Runs server in background
-4. Runs client and validates output contains "2 + 3 = 5"
+4. Runs client and validates output contains "Temperature", "Humidity", and "Pressure"
 5. Cleans up (kills server, stops container)
 
 **Management UI:**
@@ -54,9 +54,9 @@ Tests MQTT transport implementations against a Mosquitto broker.
 
 **What it does:**
 1. Starts Mosquitto in Docker
-2. Builds math_server and math_client examples with specified feature
+2. Builds sensor_server and sensor_client examples with specified feature
 3. Runs server in background
-4. Runs client and validates output contains "2 + 3 = 5"
+4. Runs client and validates output contains "Temperature", "Humidity", and "Pressure"
 5. Cleans up (kills server, stops container)
 
 ## Design Principles
@@ -99,7 +99,7 @@ All scripts use `trap` to ensure cleanup happens even on failure:
 You can also manually clean up:
 ```bash
 # Kill any lingering processes
-pkill -f math_server
+pkill -f sensor_server
 
 # Remove containers
 docker rm -f mom-rpc-test-rabbitmq

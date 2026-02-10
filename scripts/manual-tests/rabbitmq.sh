@@ -25,8 +25,8 @@ usage() {
     echo ""
     echo "This script:"
     echo "  1. Starts a RabbitMQ broker in Docker"
-    echo "  2. Builds and runs math_server example"
-    echo "  3. Runs math_client example and validates output"
+    echo "  2. Builds and runs sensor_server example"
+    echo "  3. Runs sensor_client example and validates output"
     echo "  4. Cleans up (kills server, stops container)"
     exit 1
 }
@@ -112,15 +112,15 @@ echo "    ✓ RabbitMQ broker ready"
 echo ""
 echo "==> Building examples with feature: $FEATURE"
 
-if ! cargo build --example math_server --features "$FEATURE" >& math_server.build.log; then
-    echo "Error: Failed to build math_server"
-    cat math_server.build.log
+if ! cargo build --example sensor_server --features "$FEATURE" >& sensor_server.build.log; then
+    echo "Error: Failed to build sensor_server"
+    cat sensor_server.build.log
     exit 1
 fi
 
-if ! cargo build --example math_client --features "$FEATURE" >& math_client.build.log; then
-    echo "Error: Failed to build math_client"
-    cat math_client.build.log
+if ! cargo build --example sensor_client --features "$FEATURE" >& sensor_client.build.log; then
+    echo "Error: Failed to build sensor_client"
+    cat sensor_client.build.log
     exit 1
 fi
 
@@ -129,12 +129,12 @@ echo "    ✓ Examples built successfully"
 # ---
 
 echo ""
-echo "==> Starting math_server..."
+echo "==> Starting sensor_server..."
 
 # Set broker URI via environment variable (examples should read this)
 export BROKER_URI="$BROKER_URI"
 
-cargo run --quiet --example math_server --features "$FEATURE" > server.log 2>&1 &
+cargo run --quiet --example sensor_server --features "$FEATURE" > server.log 2>&1 &
 SERVER_PID=$!
 
 echo "    Server PID: $SERVER_PID"
@@ -154,22 +154,26 @@ echo "    ✓ Server running"
 # ---
 
 echo ""
-echo "==> Running math_client..."
+echo "==> Running sensor_client..."
 
-if cargo run --quiet --example math_client --features "$FEATURE" 2>&1 | tee client.log | grep -q "2 + 3 = 5"; then
+cargo --quiet run --example sensor_client --features "$FEATURE" 2>&1 |& tee client.log
+
+if grep -q  "Temperature" client.log && \
+   grep -q  "Humidity"    client.log && \
+   grep -q  "Pressure"    client.log  ; then
     echo ""
     echo "✅ RabbitMQ integration test PASSED"
     echo ""
     echo "Feature tested: $FEATURE"
     echo "Broker URI: $BROKER_URI"
-    echo -n "Output:"
+    echo "Output:"
     cat  client.log
     exit 0
 else
     echo ""
     echo "❌ RabbitMQ integration test FAILED"
     echo ""
-    echo "Expected output containing 'Result: 42' but didn't find it"
+    echo "Expected output not found"
     echo ""
     echo "Client output:"
     cat client.log

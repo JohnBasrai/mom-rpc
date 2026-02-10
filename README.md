@@ -1,5 +1,6 @@
 [![Crates.io](https://img.shields.io/crates/v/mom-rpc.svg)](https://crates.io/crates/mom-rpc)
 [![Documentation](https://docs.rs/mom-rpc/badge.svg)](https://docs.rs/mom-rpc)
+[![CI](https://github.com/JohnBasrai/mom-rpc/actions/workflows/ci.yml/badge.svg)](https://github.com/JohnBasrai/mom-rpc/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 # mom-rpc
@@ -69,17 +70,19 @@ Perfect for testing and single-process applications - no broker required:
 ```rust
 use mom_rpc::{create_transport, RpcClient, RpcConfig, RpcServer, Result};
 
-let config = RpcConfig::memory("math");
+let config = RpcConfig::memory("sensor");
 let transport = create_transport(&config).await?;
 
-let server = RpcServer::with_transport(transport.clone(), "math");
-server.register("add", |req: AddRequest| async move {
-    Ok(AddResponse { sum: req.a + req.b })
+let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
+server.register("read_temperature", |req: ReadTemperature| async move {
+    Ok(SensorReading { value: 21.5, unit: "C".to_string(), timestamp_ms: 0 })
 });
 let _handle = server.spawn();
 
 let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
-let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3 }).await?;
+let resp: SensorReading = client
+    .request_to("env-sensor-42", "read_temperature", ReadTemperature { unit: TemperatureUnit::Celsius })
+    .await?;
 ```
 
 <details>
@@ -90,36 +93,43 @@ use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-struct AddRequest {
-    a: i32,
-    b: i32,
-}
+struct ReadTemperature { unit: TemperatureUnit }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum TemperatureUnit { Celsius, Fahrenheit }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct AddResponse {
-    sum: i32,
-}
+struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = RpcConfig::memory("math");
+    let config = RpcConfig::memory("sensor");
     let transport = create_transport(&config).await?;
 
-    let server = RpcServer::with_transport(transport.clone(), "math");
+    let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
 
-    server.register("add", |req: AddRequest| async move {
-        Ok(AddResponse { sum: req.a + req.b })
+    server.register("read_temperature", |req: ReadTemperature| async move {
+        let celsius = 22.0_f32;
+        let (value, unit) = match req.unit {
+            TemperatureUnit::Celsius => (celsius, "C"),
+            TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
+        };
+        Ok(SensorReading { value, unit: unit.to_string(), timestamp_ms: 0 })
     });
 
     let _handle = server.spawn();
 
     let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
 
-    let resp: AddResponse = client
-        .request_to("math", "add", AddRequest { a: 2, b: 3 })
+    let resp: SensorReading = client
+        .request_to(
+            "env-sensor-42",
+            "read_temperature",
+            ReadTemperature { unit: TemperatureUnit::Celsius },
+        )
         .await?;
 
-    assert_eq!(resp.sum, 5);
+    println!("Temperature: {} {}", resp.value, resp.unit);
     Ok(())
 }
 ```
@@ -128,7 +138,7 @@ async fn main() -> Result<()> {
 
 **Run it:**
 ```bash
-cargo run --example math_memory
+cargo run --example sensor_memory
 ```
 
 ### Testing with RabbitMQ
@@ -151,12 +161,12 @@ cargo run --example math_memory
 ==> Building examples with feature: transport_lapin
     ✓ Examples built successfully
 
-==> Starting math_server...
+==> Starting sensor_server...
     Server PID: 272977
     Waiting for server to initialize...
     ✓ Server running
 
-==> Running math_client...
+==> Running sensor_client...
 
 ✅ RabbitMQ integration test PASSED
 
@@ -177,38 +187,42 @@ For distributed deployments with an MQTT broker:
 **Cargo.toml:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.4", features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.x", features = ["transport_rumqttc"] }
 ```
 
 **Basic broker usage:**
 ```rust
 // Server
-let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-server");
+let config = RpcConfig::with_broker("mqtt://localhost:1883", "env-sensor-42");
 let transport = create_transport(&config).await?;
-let server = RpcServer::with_transport(transport.clone(), "math");
-server.register("add", |req: AddRequest| async move { /* ... */ });
+let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
+server.register("read_temperature", |req: ReadTemperature| async move { /* ... */ });
 server.run().await?;
 
 // Client
-let config = RpcConfig::with_broker("mqtt://localhost:1883", "math-client");
+let config = RpcConfig::with_broker("mqtt://localhost:1883", "sensor-client");
 let transport = create_transport(&config).await?;
 let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
-let resp: AddResponse = client.request_to("math", "add", AddRequest { a: 2, b: 3 }).await?;
+let resp: SensorReading = client
+    .request_to("env-sensor-42", "read_temperature", ReadTemperature { unit: TemperatureUnit::Celsius })
+    .await?;
 ```
 
 <details>
 <summary><b>View complete server with broker example</b></summary>
 
 ```rust
-
 use mom_rpc::{create_transport, RpcConfig, RpcServer};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-struct AddRequest { a: i32, b: i32 }
+struct ReadTemperature { unit: TemperatureUnit }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum TemperatureUnit { Celsius, Fahrenheit }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct AddResponse { sum: i32 }
+struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -218,16 +232,20 @@ async fn main() -> anyhow::Result<()> {
     let broker_uri = std::env::var("BROKER_URI")
         .unwrap_or_else(|_| "mqtt://localhost:1883".to_string());
 
-    let config = RpcConfig::with_broker(&broker_uri, "math-server");
+    let config = RpcConfig::with_broker(&broker_uri, "env-sensor-42");
     let transport = create_transport(&config).await?;
 
-    let server = RpcServer::with_transport(transport.clone(), "math");
+    let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
 
-    server.register("add", |req: AddRequest| async move {
-        Ok(AddResponse { sum: req.a + req.b })
+    server.register("read_temperature", |req: ReadTemperature| async move {
+        let celsius = 21.5_f32;
+        let (value, unit) = match req.unit {
+            TemperatureUnit::Celsius => (celsius, "C"),
+            TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
+        };
+        Ok(SensorReading { value, unit: unit.to_string(), timestamp_ms: 0 })
     });
 
-    // Setup graceful shutdown
     let server_clone = server.clone();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl+C");
@@ -250,30 +268,36 @@ use mom_rpc::{create_transport, RpcClient, RpcConfig};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-struct AddRequest { a: i32, b: i32 }
+struct ReadTemperature { unit: TemperatureUnit }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum TemperatureUnit { Celsius, Fahrenheit }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct AddResponse { sum: i32 }
+struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
 
     env_logger::init();
 
-    let broker_uri =
-        std::env::var("BROKER_URI")
+    let broker_uri = std::env::var("BROKER_URI")
         .unwrap_or_else(|_| "mqtt://localhost:1883".to_string());
 
-    let config = RpcConfig::with_broker(&broker_uri, "math-client");
+    let config = RpcConfig::with_broker(&broker_uri, "sensor-client");
     let transport = create_transport(&config).await?;
 
     let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
 
-    let resp: AddResponse = client
-        .request_to("math", "add", AddRequest { a: 2, b: 3 })
+    let resp: SensorReading = client
+        .request_to(
+            "env-sensor-42",
+            "read_temperature",
+            ReadTemperature { unit: TemperatureUnit::Celsius },
+        )
         .await?;
 
-    println!("2 + 3 = {}", resp.sum);
+    println!("Temperature: {} {} @ {}", resp.value, resp.unit, resp.timestamp_ms);
     transport.close().await?;
     Ok(())
 }
@@ -287,10 +311,10 @@ async fn main() -> anyhow::Result<()> {
 docker run -p 1883:1883 eclipse-mosquitto
 
 # Terminal 2: Start server
-cargo run --example math_server --features transport_rumqttc
+cargo run --example sensor_server --features transport_rumqttc
 
 # Terminal 3: Send requests
-cargo run --example math_client --features transport_rumqttc
+cargo run --example sensor_client --features transport_rumqttc
 ```
 
 ### Logging
@@ -314,7 +338,7 @@ env_logger::builder()
 **To disable logging entirely**, omit the feature:
 ```toml
 [dependencies]
-mom-rpc = { version = "0.4", default-features = false, features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.x", default-features = false, features = ["transport_rumqttc"] }
 ```
 ---
 
