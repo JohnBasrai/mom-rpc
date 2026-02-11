@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
-## [0.6.3] - 2026-02-10
+## [0.6.3] - 2026-02-11
+
+### Added
+
+- Dual-license crate under MIT OR Apache-2.0
+- Readme: Client & Server examples changed to return mpm_Rpc::Error instead of anyhow::Error
 
 ### Fixed
 
