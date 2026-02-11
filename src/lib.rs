@@ -9,6 +9,7 @@
 //! - **Memory** (default) - In-process testing transport, always available
 //! - **MQTT via rumqttc** - Recommended MQTT backend (enable `transport_rumqttc`)
 //! - **AMQP via lapin**   - RabbitMQ and AMQP 0-9-1 brokers (enable `transport_lapin`)
+//! - **DDS via rustdds**  - Brokerless peer-to-peer transport (enable `transport_rustdds`)
 //!
 //! # Quick Start
 //!
@@ -98,6 +99,9 @@ pub use transport::create_rumqttc_transport;
 #[cfg(feature = "transport_lapin")]
 pub use transport::create_lapin_transport;
 
+#[cfg(feature = "transport_rustdds")]
+pub use transport::create_rustdds_transport;
+
 // --- public re-exports
 pub use domain::{
     //
@@ -116,7 +120,8 @@ pub use domain::{
 ///
 /// 1. `transport_rumqttc` - MQTT via rumqttc (recommended)
 /// 2. `transport_lapin` - AMQP via lapin
-/// 3. Default - In-memory transport
+/// 3. `transport_rustdds` - DDS via rustdds
+/// 4. Default - In-memory transport
 ///
 /// If multiple transport features are enabled, rumqttc takes precedence over lapin.
 ///
@@ -150,13 +155,24 @@ pub use domain::{
 /// - Transport initialization fails
 pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
+
     #[cfg(feature = "transport_rumqttc")]
     return create_rumqttc_transport(config).await;
 
     #[cfg(all(feature = "transport_lapin", not(feature = "transport_rumqttc")))]
     return create_lapin_transport(config).await;
 
+    #[cfg(all(
+        feature = "transport_rustdds",
+        not(any(feature = "transport_rumqttc", feature = "transport_lapin"))
+    ))]
+    return create_rustdds_transport(config).await;
+
     // Fallback / default
-    #[cfg(not(any(feature = "transport_rumqttc", feature = "transport_lapin")))]
+    #[cfg(not(any(
+        feature = "transport_rumqttc",
+        feature = "transport_lapin",
+        feature = "transport_rustdds"
+    )))]
     create_memory_transport(config).await
 }

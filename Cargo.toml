@@ -1,6 +1,6 @@
 [package]
 name = "mom-rpc"
-version = "0.6.3"
+version = "0.7.0"
 edition = "2021"
 authors = ["John Basrai"]
 description = "Transport-agnostic async RPC over message-oriented middleware (AMQP, MQTT, in-memory)"
@@ -19,6 +19,7 @@ futures-lite = { version = "2", optional = true }
 lapin        = { version = "4", optional = true }
 log          = { version = "0.4", optional = true }
 rumqttc      = { version = "0.25", optional = true }
+rustdds      = { version = "0.11", optional = true }
 serde        = { version = "1", features = ["derive", "rc"] }
 serde_json   = "1"
 thiserror    = "2"
@@ -46,10 +47,11 @@ name = "sensor_memory"
 path = "examples/sensor_memory.rs"
 
 [features]
-default = ["logging"]
-logging = ["log"]
+default           = ["logging"]
+logging           = ["log"]
 transport_rumqttc = ["rumqttc"]
-transport_lapin = ["lapin", "futures-lite"]
+transport_lapin   = ["lapin", "futures-lite"]
+transport_rustdds = ["dep:rustdds"]
 
 [lints.clippy]
 uninlined-format-args = "warn"

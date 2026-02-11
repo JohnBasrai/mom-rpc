@@ -157,7 +157,12 @@ mod kafka;
 pub use kafka::create_rdkafka_transport;
 ```
 
-6. Update lib.rs:
+6. Update lib.rs `src/lib.rs`
+   - Add re-export for the new transport following the pattern of existing transports (e.g., transport_lapin)
+   - Update `create_transport()` function with feature guard
+   - Update doc comments following the pattern of existing transports (e.g., `transport_lapin`) 
+
+The code below demonstrates the feature guard pattern for `create_transport()`:
 
 ```rust
 #[cfg(feature = "transport_rdkafka")]
