@@ -8,8 +8,8 @@ This transport implementation uses the **dust_dds** crate, not rustdds.
 
 #### **Why dust_dds**
 
-|                                |  |
-|--------------------------------|--|
+| Factor                         | Details |
+|:-------------------------------|:--------|
 | ✅ **Actively maintained**     | Updated regularly with bug fixes (last release: 2 months ago) |
 | ✅ **Commercial backing**      | Developed by S2E Software Systems with professional support available |
 | ✅ **Proven interoperability** | Works with RTI DDS, FastDDS, and CycloneDDS |
@@ -22,8 +22,8 @@ This transport implementation uses the **dust_dds** crate, not rustdds.
 
 #### **Why NOT rustdds**
 
-|                               |  |
-|-------------------------------|--|
+| Factor                        | Details |
+|:------------------------------|:--------|
 | ❌ **Not maintained**         | Test failures on master branch, last update 5+ months ago |
 | ❌ **Broken communication**   | GitHub issue #399: "Publisher sends data but Subscriber cannot receive" |
 | ❌ **26 open issues**         | Many fundamental problems including discovery failures |
@@ -43,7 +43,7 @@ This transport implementation uses the **dust_dds** crate, not rustdds.
 **Current implementation:**
 - Switching to dust_dds for v0.7.0 release
 - Architecture and patterns from rustdds implementation will be reused
-- Expect discovery to work properly with StatusCondition-based matching
+- Expect discovery to work properly with `StatusCondition`-based matching
 
 ### Download Statistics (February 2026)
 

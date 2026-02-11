@@ -1,4 +1,4 @@
-//! DDS transport implementation using `rustdds`.
+//! DDS transport implementation using `dust_dds`.
 //!
 //! This module provides an implementation of the `Transport` trait backed by DDS
 //! (Data Distribution Service) using the RTPS wire protocol. It follows an
@@ -52,18 +52,24 @@
 //! - Subscriptions create new `DataReader` instances per topic.
 //! - Domain ID parsed from transport_uri format: `dds:45` (domain 45)
 
-use rustdds::{
+use dust_dds::{
     //
-    no_key::{DataReader, DataWriter},
-    policy,
-    serialization::CDRDeserializerAdapter,
-    serialization::CDRSerializerAdapter,
-    DomainParticipant,
-    QosPolicyBuilder,
-    TopicKind,
+    domain::domain_participant::DomainParticipant,
+    domain::domain_participant_factory::DomainParticipantFactory,
+    infrastructure::qos::{DataReaderQos, DataWriterQos, QosKind},
+    infrastructure::qos_policy::{
+        //
+        DurabilityQosPolicyKind,
+        HistoryQosPolicyKind,
+        ReliabilityQosPolicyKind,
+    },
+    infrastructure::status::NO_STATUS,
+    infrastructure::time::DurationKind,
+    listener::NO_LISTENER,
+    publication::data_writer::DataWriter,
+    subscription::data_reader::DataReader,
 };
 
-use futures::StreamExt; // For async stream operations
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -168,7 +174,7 @@ impl Cmd {
 ///
 /// Represents a single DomainParticipant and provides reliable,
 /// non-durable message delivery consistent with other transports' semantics.
-pub struct RustddsTransport {
+pub struct DustddsTransport {
     // ---
     transport_id: String,
     cmd_tx: mpsc::Sender<Cmd>,
@@ -176,10 +182,10 @@ pub struct RustddsTransport {
     tasks: TaskList,
 }
 
-impl RustddsTransport {
+impl DustddsTransport {
     // ---
 
-    /// Creates a new rustdds transport with the given `DomainParticipant`.
+    /// Creates a new dust_dds transport with the given `DomainParticipant`.
     pub fn create(transport_id: impl Into<String>, participant: DomainParticipant) -> TransportPtr {
         // ---
 
@@ -195,6 +201,7 @@ impl RustddsTransport {
             cmd_rx,
             subscribers: Arc::clone(&subscribers),
             writers: HashMap::new(),
+            readers: HashMap::new(),
             reader_tasks: Vec::new(),
             has_sent_first_message: HashMap::new(),
         };
@@ -221,7 +228,8 @@ struct DdsActor {
     participant: DomainParticipant,
     cmd_rx: mpsc::Receiver<Cmd>,
     subscribers: SubscriberMap,
-    writers: HashMap<String, DataWriter<Envelope, CDRSerializerAdapter<Envelope>>>,
+    writers: HashMap<String, DataWriter<Envelope>>,
+    readers: HashMap<String, DataReader<Envelope>>,
     reader_tasks: Vec<JoinHandle<()>>,
     has_sent_first_message: HashMap<String, bool>, // Track first publish per topic for discovery verification
 }
@@ -264,11 +272,11 @@ impl DdsActor {
             self.create_writer(&topic)?;
         }
 
-        let writer = self.writers.get_mut(&topic).ok_or_else(|| {
+        let writer = self.writers.get(&topic).ok_or_else(|| {
             RpcError::Transport(format!("DataWriter not found for topic {topic}"))
         })?;
 
-        writer.write(env, None).map_err(|e| {
+        writer.write(&env, None).map_err(|e| {
             let msg = format!(
                 "{}: write failed for topic {topic}: {e:?}",
                 self.transport_id
@@ -278,88 +286,70 @@ impl DdsActor {
         })?;
 
         // Wait for acknowledgment ONLY on first publish to verify discovery
-        // Subsequent publishes are fire-and-forget for better throughput
-        if !self.has_sent_first_message.get(&topic).unwrap_or(&false) {
-            // ---
-
+        if !self
+            .has_sent_first_message
+            .get(&topic)
+            .copied()
+            .unwrap_or(false)
+        {
             log_debug!(
-                "{}: waiting for first ack on topic {topic} to verify discovery",
+                "{}: first publish on topic {topic}, waiting for discovery...",
                 self.transport_id
             );
 
-            let ack_timeout = tokio::time::Duration::from_secs(5);
-            match tokio::time::timeout(ack_timeout, writer.async_wait_for_acknowledgments()).await {
-                Ok(Ok(_)) => {
-                    self.has_sent_first_message.insert(topic.clone(), true);
-                    log_debug!(
-                        "{}: first publish confirmed for topic {topic}, future publishes will be fire-and-forget",
-                        self.transport_id
-                    );
-                }
-                Ok(Err(e)) => {
-                    return Err(RpcError::Transport(format!(
-                        "{}: acknowledgment failed for topic {topic}: {e:?}",
-                        self.transport_id
-                    )));
-                }
-                Err(_timeout) => {
-                    return Err(RpcError::Transport(format!(
-                        "{}: timeout waiting for acknowledgment on topic {topic} - no matched readers?",
-                        self.transport_id
-                    )));
-                }
-            }
+            // Simple delay to allow discovery to complete
+            // dust_dds handles discovery automatically, no explicit wait needed
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+            self.has_sent_first_message.insert(topic.clone(), true);
+            log_debug!(
+                "{}: discovery complete for topic {topic}",
+                self.transport_id
+            );
         }
 
-        log_debug!("{}: published to topic {topic}", self.transport_id);
+        log_debug!("{}: published message on topic {topic}", self.transport_id);
         Ok(())
-    }
-
-    async fn handle_subscribe(&mut self, topic: String, resp: oneshot::Sender<Result<()>>) {
-        // ---
-
-        // Create DataReader and spawn polling task
-        let result = self.create_reader_and_poll(&topic);
-
-        match result {
-            Ok(()) => {
-                log_info!("{}: subscribed to topic {}", self.transport_id, topic);
-                let _ = resp.send(Ok(()));
-            }
-            Err(e) => {
-                log_error!(
-                    "{}: subscription failed for topic {}: {:?}",
-                    self.transport_id,
-                    topic,
-                    e
-                );
-                let _ = resp.send(Err(e));
-            }
-        }
     }
 
     fn create_writer(&mut self, topic: &str) -> Result<()> {
         // ---
 
-        let qos = build_rpc_qos();
+        log_debug!(
+            "{}: creating DataWriter for topic {}",
+            self.transport_id,
+            topic
+        );
 
+        // Create topic
         let topic_obj = self
             .participant
-            .create_topic(
-                topic.to_string(),
-                "Envelope".to_string(),
-                &qos,
-                TopicKind::NoKey,
+            .create_topic::<Envelope>(
+                topic,
+                topic, // type_name same as topic_name for simplicity
+                QosKind::Default,
+                NO_LISTENER,
+                NO_STATUS,
             )
             .map_err(|e| RpcError::Transport(format!("create_topic failed: {e:?}")))?;
 
+        // Create publisher
         let publisher = self
             .participant
-            .create_publisher(&qos)
+            .create_publisher(QosKind::Default, NO_LISTENER, NO_STATUS)
             .map_err(|e| RpcError::Transport(format!("create_publisher failed: {e:?}")))?;
 
+        // Build custom QoS for RPC semantics
+        let writer_qos = build_rpc_writer_qos();
+
+        // Create DataWriter
         let writer = publisher
-            .create_datawriter_no_key(&topic_obj, None)
+            .create_datawriter::<Envelope>(
+                &topic_obj,
+                QosKind::Specific(writer_qos),
+                NO_LISTENER,
+                NO_STATUS,
+            )
             .map_err(|e| RpcError::Transport(format!("create_datawriter failed: {e:?}")))?;
 
         self.writers.insert(topic.to_string(), writer);
@@ -371,29 +361,66 @@ impl DdsActor {
         Ok(())
     }
 
-    fn create_reader_and_poll(&mut self, topic: &str) -> Result<()> {
+    async fn handle_subscribe(&mut self, topic: String, resp: oneshot::Sender<Result<()>>) {
         // ---
 
-        let qos = build_rpc_qos();
+        log_debug!(
+            "{}: handle_subscribe() called for topic {}",
+            self.transport_id,
+            topic
+        );
 
+        let result = self.create_reader(&topic);
+        let _ = resp.send(result);
+    }
+
+    fn create_reader(&mut self, topic: &str) -> Result<()> {
+        // ---
+
+        // Skip if reader already exists for this topic
+        if self.readers.contains_key(topic) {
+            log_debug!(
+                "{}: DataReader already exists for topic {}",
+                self.transport_id,
+                topic
+            );
+            return Ok(());
+        }
+
+        log_debug!(
+            "{}: creating DataReader for topic {}",
+            self.transport_id,
+            topic
+        );
+
+        // Create topic
         let topic_obj = self
             .participant
-            .create_topic(
-                topic.to_string(),
-                "Envelope".to_string(),
-                &qos,
-                TopicKind::NoKey,
+            .create_topic::<Envelope>(
+                topic,
+                topic, // type_name same as topic_name
+                QosKind::Default,
+                NO_LISTENER,
+                NO_STATUS,
             )
             .map_err(|e| RpcError::Transport(format!("create_topic failed: {e:?}")))?;
 
+        // Create subscriber
         let subscriber = self
             .participant
-            .create_subscriber(&qos)
+            .create_subscriber(QosKind::Default, NO_LISTENER, NO_STATUS)
             .map_err(|e| RpcError::Transport(format!("create_subscriber failed: {e:?}")))?;
 
+        // Build custom QoS for RPC semantics
+        let reader_qos = build_rpc_reader_qos();
+
+        // Create DataReader
         let reader = subscriber
-            .create_datareader_no_key::<Envelope, CDRDeserializerAdapter<Envelope>>(
-                &topic_obj, None,
+            .create_datareader::<Envelope>(
+                &topic_obj,
+                QosKind::Specific(reader_qos),
+                NO_LISTENER,
+                NO_STATUS,
             )
             .map_err(|e| RpcError::Transport(format!("create_datareader failed: {e:?}")))?;
 
@@ -403,16 +430,17 @@ impl DdsActor {
             topic
         );
 
-        // Spawn task to poll this reader's async stream
+        // Spawn task to poll this reader
         let transport_id = self.transport_id.clone();
         let topic_name = topic.to_string();
         let subscribers = Arc::clone(&self.subscribers);
 
         let handle = tokio::spawn(async move {
-            poll_reader_stream(transport_id, topic_name, reader, subscribers).await;
+            poll_reader(transport_id, topic_name, reader, subscribers).await;
         });
 
         self.reader_tasks.push(handle);
+        self.readers.insert(topic.to_string(), reader);
         Ok(())
     }
 
@@ -424,40 +452,37 @@ impl DdsActor {
     }
 }
 
-/// Polls a `DataReader`'s async stream and fans out incoming samples to local subscribers.
-async fn poll_reader_stream(
+/// Polls a `DataReader` and fans out incoming samples to local subscribers.
+async fn poll_reader(
     transport_id: String,
     topic: String,
-    reader: DataReader<Envelope, CDRDeserializerAdapter<Envelope>>,
+    reader: DataReader<Envelope>,
     subscribers: SubscriberMap,
 ) {
     // ---
 
-    log_debug!(
-        "{}: polling DataReader stream for topic {}",
-        transport_id,
-        topic
-    );
+    log_debug!("{}: polling DataReader for topic {}", transport_id, topic);
 
-    // Get async stream from DataReader
-    let mut stream = reader.async_bare_sample_stream();
+    loop {
+        // Poll for data periodically
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-    while let Some(sample_result) = stream.next().await {
-        match sample_result {
-            Ok(env) => {
-                handle_incoming(&transport_id, &topic, Arc::clone(&subscribers), env).await;
+        // Try to read next sample
+        match reader.read_next_sample() {
+            Ok(sample) if sample.sample_info().valid_data => {
+                if let Some(env) = sample.data() {
+                    handle_incoming(&transport_id, &topic, Arc::clone(&subscribers), env.clone())
+                        .await;
+                }
+            }
+            Ok(_) => {
+                // No valid data or metadata-only sample
             }
             Err(e) => {
-                log_debug!("{transport_id}: sample read error on topic {topic}: {e:?}");
+                log_debug!("{transport_id}: read error on topic {topic}: {e:?}");
             }
         }
     }
-
-    log_debug!(
-        "{}: DataReader stream ended for topic {}",
-        transport_id,
-        topic
-    );
 }
 
 /// Fans out an incoming envelope to all local subscribers for the topic.
@@ -509,25 +534,40 @@ async fn handle_incoming(
     }
 }
 
-/// Builds QoS policies appropriate for RPC semantics.
+/// Builds QoS policies appropriate for RPC semantics for DataWriter.
 ///
 /// - `Reliability::Reliable` - TCP-like delivery with retries (consistent with MQTT/AMQP)
 /// - `History::KeepLast(1)` - Only latest message (prevents correlation confusion)
 /// - `Durability::Volatile` - No persistence (ephemeral, point-to-point)
-fn build_rpc_qos() -> rustdds::QosPolicies {
+fn build_rpc_writer_qos() -> DataWriterQos {
     // ---
 
-    QosPolicyBuilder::new()
-        .reliability(policy::Reliability::Reliable {
-            max_blocking_time: rustdds::Duration::ZERO, // Non-blocking writes
-        })
-        .history(policy::History::KeepLast { depth: 1 })
-        .durability(policy::Durability::Volatile)
-        .build()
+    DataWriterQos {
+        reliability: ReliabilityQosPolicyKind::Reliable {
+            max_blocking_time: DurationKind::Finite(std::time::Duration::ZERO),
+        },
+        history: HistoryQosPolicyKind::KeepLast { depth: 1 },
+        durability: DurabilityQosPolicyKind::Volatile,
+        ..Default::default()
+    }
+}
+
+/// Builds QoS policies appropriate for RPC semantics for DataReader.
+fn build_rpc_reader_qos() -> DataReaderQos {
+    // ---
+
+    DataReaderQos {
+        reliability: ReliabilityQosPolicyKind::Reliable {
+            max_blocking_time: DurationKind::Finite(std::time::Duration::ZERO),
+        },
+        history: HistoryQosPolicyKind::KeepLast { depth: 1 },
+        durability: DurabilityQosPolicyKind::Volatile,
+        ..Default::default()
+    }
 }
 
 #[async_trait::async_trait]
-impl Transport for RustddsTransport {
+impl Transport for DustddsTransport {
     // ---
 
     fn transport_id(&self) -> &str {
@@ -618,7 +658,7 @@ impl Transport for RustddsTransport {
     }
 }
 
-/// Creates a rustdds-based DDS transport from the given configuration.
+/// Creates a dust_dds-based DDS transport from the given configuration.
 ///
 /// # Configuration
 ///
@@ -634,11 +674,15 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // Parse domain ID from transport_uri (format: dds:45)
     let domain_id = parse_domain_id(config.transport_uri.as_deref());
 
-    let participant = DomainParticipant::new(domain_id).map_err(|e| {
-        let msg = format!("Failed to create DomainParticipant on domain {domain_id}: {e:?}");
-        log_error!("{msg}");
-        RpcError::Transport(msg)
-    })?;
+    let participant_factory = DomainParticipantFactory::get_instance();
+
+    let participant = participant_factory
+        .create_participant(domain_id, QosKind::Default, NO_LISTENER, NO_STATUS)
+        .map_err(|e| {
+            let msg = format!("Failed to create DomainParticipant on domain {domain_id}: {e:?}");
+            log_error!("{msg}");
+            RpcError::Transport(msg)
+        })?;
 
     log_info!(
         "{}: created DomainParticipant on domain {}",
@@ -646,7 +690,7 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
         domain_id
     );
 
-    Ok(RustddsTransport::create(&config.transport_id, participant))
+    Ok(DustddsTransport::create(&config.transport_id, participant))
 }
 
 /// Parses domain ID from `transport_uri`.

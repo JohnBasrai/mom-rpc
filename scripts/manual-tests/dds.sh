@@ -7,7 +7,7 @@ set -euo pipefail
 # each other automatically via RTPS multicast.
 #
 # Usage:   ./dds.sh <feature-flag>
-# Example: ./dds.sh transport_rustdds
+# Example: ./dds.sh transport_dustdds
 
 FEATURE="${1:-}"
 DOMAIN_ID="${DDS_DOMAIN:-0}"
@@ -19,7 +19,7 @@ usage() {
     echo "Usage: $0 <feature-flag>"
     echo ""
     echo "Example:"
-    echo "  $0 transport_rustdds"
+    echo "  $0 transport_dustdds"
     echo ""
     echo "Environment variables:"
     echo "  DDS_DOMAIN - DDS domain ID (default: 0)"

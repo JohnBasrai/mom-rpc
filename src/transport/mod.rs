@@ -17,7 +17,7 @@ mod mqtt;
 #[cfg(feature = "transport_lapin")]
 mod amqp;
 
-#[cfg(feature = "transport_rustdds")]
+#[cfg(feature = "transport_dustdds")]
 mod dds;
 
 #[allow(unused)]
@@ -29,5 +29,5 @@ pub use mqtt::create_rumqttc_transport;
 #[cfg(feature = "transport_lapin")]
 pub use amqp::create_lapin_transport;
 
-#[cfg(feature = "transport_rustdds")]
-pub use dds::create_rustdds_transport;
+#[cfg(feature = "transport_dustdds")]
+pub use dds::create_dustdds_transport;

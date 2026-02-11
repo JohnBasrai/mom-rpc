@@ -98,7 +98,7 @@ Transports are organized by **protocol → library**. Use an existing transport 
 
 ### Adding First Implementation for a New Protocol
 
-**Example:** See issue #38 and commit `eb52cf9` for a complete working example of adding the DDS transport via rustdds.
+**Example:** See issue #38 and commit `eb52cf9` for a complete working example of adding the DDS transport via dustdds.
 
 1. Create protocol directory: `src/transport/kafka/`
 2. Create protocol gateway:   `src/transport/kafka/mod.rs`

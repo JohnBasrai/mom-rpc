@@ -123,7 +123,7 @@ transport/
 │   └── rdkafka.rs        # Future: Kafka via rdkafka
 └── dds/
     ├── mod.rs
-    └── rustdds.rs        # Future: DDS via rustdds
+    └── rustdds.rs        # Future: DDS via dustdds
 ```
 
 Feature names follow the **library** convention:
