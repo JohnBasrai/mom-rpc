@@ -15,6 +15,7 @@ documentation = "https://docs.rs/mom-rpc"
 [dependencies]
 async-trait  = "0.1"
 bytes        = { version = "1", features = ["serde"] }
+futures      = { version = "0.3", optional = true } # For DDS
 futures-lite = { version = "2", optional = true }
 lapin        = { version = "4", optional = true }
 log          = { version = "0.4", optional = true }
@@ -51,7 +52,7 @@ default           = ["logging"]
 logging           = ["log"]
 transport_rumqttc = ["rumqttc"]
 transport_lapin   = ["lapin", "futures-lite"]
-transport_rustdds = ["dep:rustdds"]
+transport_rustdds = ["dep:rustdds", "futures"]
 
 [lints.clippy]
 uninlined-format-args = "warn"

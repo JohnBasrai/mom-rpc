@@ -98,6 +98,8 @@ Transports are organized by **protocol → library**. Use an existing transport 
 
 ### Adding First Implementation for a New Protocol
 
+**Example:** See issue #38 and commit `eb52cf9` for a complete working example of adding the DDS transport via rustdds.
+
 1. Create protocol directory: `src/transport/kafka/`
 2. Create protocol gateway:   `src/transport/kafka/mod.rs`
 3. Create new transport implementation: `src/transport/kafka/rdkafka.rs`
@@ -105,6 +107,7 @@ Transports are organized by **protocol → library**. Use an existing transport 
 5. Update transport-level gateway: `src/transport/mod.rs`
 6. Update lib.rs `src/lib.rs`
 7. Update tests `scripts/local-test.sh`
+8. Go back and finish the implementation begun in step 3.
 
 ---
 
@@ -135,6 +138,8 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // Implementation
 }
 ```
+
+Leave this stub now, you will finish it in step 8.
 
 4. Update Cargo.toml / add feature flag
 
@@ -201,6 +206,15 @@ run_test "no default features" "no-default-features"
 run_test "all features" "all-features"
 ```
 
+8. Go back and finish the implementation begun in step 3.
+
+Study the reference implementation (`lapin` or `rumqttc`) to understand:
+
+- Actor model structure (background task with channel communication)
+- Transport trait implementation (publish, subscribe, unsubscribe)
+- Error handling and connection management
+- Serialization and correlation ID handling
+
 ### Adding Second Implementation for Existing Protocol
 
 If a protocol directory already exists (e.g., `mqtt/`), just add the new library:
@@ -213,6 +227,7 @@ If a protocol directory already exists (e.g., `mqtt/`), just add the new library
 | 4. Update transport-level gateway:   | 5  |
 | 5. Update src/lib.rs:                | 6  |
 | 6. Update tests:                     | 7  |
+| 7. Finish transport implementation:  | 8  |
 
 ### Feature Naming Convention
 
