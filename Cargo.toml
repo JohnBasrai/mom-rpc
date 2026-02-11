@@ -49,11 +49,11 @@ name = "sensor_memory"
 path = "examples/sensor_memory.rs"
 
 [features]
-default           = ["logging"]
-logging           = ["log"]
-transport_rumqttc = ["rumqttc"]
-transport_lapin   = ["lapin", "futures-lite"]
-transport_dustdds = ["dep:dust_dds", "futures"]
+default            = ["logging"]
+logging            = ["log"]
+transport_rumqttc  = ["rumqttc"]
+transport_lapin    = ["lapin", "futures-lite"]
+transport_dust_dds = ["dep:dust_dds", "futures"]
 
 [lints.clippy]
 uninlined-format-args = "warn"
