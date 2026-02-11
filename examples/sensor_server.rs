@@ -25,9 +25,6 @@ async fn main() -> Result<()> {
 
     let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
 
-    // Spawn server in background so we can use the main task for client
-    let _handle = server.spawn();
-
     server.register("read_temperature", |req: ReadTemperature| async move {
         // ---
         let celsius = 21.5_f32;
@@ -62,11 +59,22 @@ async fn main() -> Result<()> {
 
     println!("sensor_server listening as node_id=env-sensor-42");
 
-    // Block until Ctrl+C
-    tokio::signal::ctrl_c().await.ok();
+    // Shutdown on Ctrl+C
+    let server_clone = server.clone();
+    let transport_clone = transport.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to listen for Ctrl+C");
+        server_clone.shutdown().await.expect("shutdown failed");
+        transport_clone
+            .close()
+            .await
+            .expect("transport close failed");
+    });
 
-    server.shutdown().await?;
-    transport.close().await?;
+    // Blocks until shutdown() is called
+    server.run().await?;
     Ok(())
 }
 

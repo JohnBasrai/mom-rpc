@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
+## [0.6.3] - 2026-02-10
+
+### Fixed
+
+- `sensor_server` example was using `spawn()` instead of `run()`, which is the correct method for a standalone server process (#35)
+
+### Tests
+
+- Added `test_run_blocks_until_shutdown` integration test to verify `run()` blocks until `shutdown()` is called (#35)
+
 ## [0.6.2] - 2026-02-10
 
 ### Fixed
