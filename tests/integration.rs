@@ -417,6 +417,42 @@ async fn test_request_with_timeout_expires() -> Result<()> {
     Ok(())
 }
 
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
+#[tokio::test]
+async fn test_run_blocks_until_shutdown() -> Result<()> {
+    // ---
+    let config = RpcConfig::memory("test_run_blocks");
+    let transport = create_memory_transport(&config).await?;
+    let server = RpcServer::with_transport(transport.clone(), "run-math");
+
+    server.register("add", |req: AddRequest| async move {
+        Ok(AddResponse { sum: req.a + req.b })
+    });
+
+    let shutdown_called = Arc::new(AtomicBool::new(false));
+    let shutdown_called_clone = shutdown_called.clone();
+    let server_clone = server.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        shutdown_called_clone.store(true, Ordering::SeqCst);
+        server_clone.shutdown().await.expect("shutdown failed");
+    });
+
+    server.run().await?;
+
+    assert!(
+        shutdown_called.load(Ordering::SeqCst),
+        "run() returned before shutdown() was called"
+    );
+
+    transport.close().await?;
+    Ok(())
+}
+
 #[cfg(feature = "logging")]
 mod imp {
     use std::sync::Once;
