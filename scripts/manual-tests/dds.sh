@@ -10,7 +10,7 @@ set -euo pipefail
 # Example: ./dds.sh transport_dust_dds
 
 FEATURE="${1:-}"
-: "${DDS_DOMAIN:=0}"
+: "${DOMAIN_ID:=0}"
 : "${TRANSPORT_URI:=dds:${DOMAIN_ID}}"
 NO_CLEAN=
 NO_CLEAN="${2:-}"

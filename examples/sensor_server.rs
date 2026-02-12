@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .with_target(true)
         .with_line_number(true)
+        .with_ansi(false)
         .init();
 
     let broker_uri =

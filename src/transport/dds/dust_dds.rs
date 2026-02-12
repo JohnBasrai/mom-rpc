@@ -87,7 +87,6 @@ use std::sync::Arc;
 
 use tokio::sync::{mpsc, oneshot, watch, RwLock};
 use tokio::task::JoinHandle;
-use tokio::time::Duration as TokioDuration;
 
 use crate::{
     //
@@ -104,6 +103,9 @@ use crate::{
     TransportPtr,
 };
 
+/// Constant type name for all DdsEnvelope topics
+const DDS_TYPE_NAME: &str = "DdsEnvelope";
+
 //
 // DDS-compatible wrapper for Envelope
 //
@@ -117,7 +119,7 @@ use crate::{
 #[derive(Clone, Debug, DdsType, serde::Serialize, serde::Deserialize)]
 struct DdsEnvelope {
     /// JSON-serialized Envelope
-    #[dust_dds(key)]
+    //#[dust_dds(key)]
     topic: String,
     /// JSON-serialized envelope data
     data: Vec<u8>,
@@ -184,17 +186,55 @@ impl Cmd {
 
         match self {
             Cmd::Publish { topic, env, resp } => {
+                // ---
+                log_debug!(
+                    "{}: Cmd::Publish called for topic {topic}",
+                    actor.transport_id
+                );
+
                 let result = actor.handle_publish(topic, env).await;
-                let _ = resp.send(result);
+
+                log_debug!(
+                    "{}: Cmd::Publish sending result:{result:?}",
+                    actor.transport_id
+                );
+
+                if resp.send(result).is_err() {
+                    log_error!(
+                        "{}: publish responder dropped before response could be sent",
+                        actor.transport_id
+                    );
+                }
                 ActorStep::Continue
             }
             Cmd::Subscribe { topic, resp } => {
-                actor.handle_subscribe(topic, resp).await;
+                // ---
+                log_debug!(
+                    "{}: Cmd::Subscribe called for topic {topic}",
+                    actor.transport_id
+                );
+                let result = actor.handle_subscribe(&topic).await;
+                log_debug!(
+                    "{}: Cmd::Subscribe sending result:{result:?} for topic {topic}",
+                    actor.transport_id
+                );
+                let _ = resp.send(result);
+
                 ActorStep::Continue
             }
             Cmd::Close { resp } => {
+                // ---
+                log_debug!("{}: Cmd::Close called", actor.transport_id);
+
                 actor.handle_close().await;
-                let _ = resp.send(Ok(()));
+
+                if resp.send(Ok(())).is_err() {
+                    log_debug!(
+                        "{}: Cmd::Close responder dropped before response could be sent",
+                        actor.transport_id
+                    );
+                }
+
                 ActorStep::Stop
             }
         }
@@ -239,7 +279,6 @@ impl DustddsTransport {
             shutdown_tx,
             writers: HashMap::new(),
             reader_tasks: Vec::new(),
-            has_sent_first_message: HashMap::new(),
         };
 
         let handle = tokio::task::spawn(actor.run());
@@ -267,7 +306,6 @@ struct DdsActor {
     shutdown_tx: watch::Sender<bool>,
     writers: HashMap<String, DataWriterAsync<StdRuntime, DdsEnvelope>>,
     reader_tasks: Vec<JoinHandle<()>>,
-    has_sent_first_message: HashMap<String, bool>, // Track first publish per topic for discovery verification
 }
 
 impl DdsActor {
@@ -302,7 +340,6 @@ impl DdsActor {
 
         // Get or create DataWriter for this topic
         if !self.writers.contains_key(&topic) {
-            log_debug!("{tid}: creating new DataWriter for topic {topic}");
             self.create_writer(&topic).await?;
         }
 
@@ -312,24 +349,11 @@ impl DdsActor {
             RpcError::Transport(format!("DataWriter not found for topic {topic}"))
         })?;
 
+        // Wait for at least one matched reader
+        wait_for_matched_reader(tid, &topic, writer, 5).await?;
+
         // Convert Envelope to DdsEnvelope for DDS transmission
         let dds_env = DdsEnvelope::try_from(&env)?;
-
-        // Wait for acknowledgment ONLY on first publish to verify discovery
-        if !self
-            .has_sent_first_message
-            .get(&topic)
-            .copied()
-            .unwrap_or(false)
-        {
-            log_debug!("{tid}: first publish on topic {topic}, waiting for discovery...");
-
-            let timeout = TokioDuration::from_millis(1000);
-            Self::wait_for_writer_match(writer, timeout).await?;
-
-            self.has_sent_first_message.insert(topic.clone(), true);
-            log_debug!("{tid}: discovery complete for topic {topic}");
-        }
 
         writer.write(dds_env, None).await.map_err(|e| {
             let msg = format!("{tid}: write failed for topic {topic}: {e:?}");
@@ -341,41 +365,19 @@ impl DdsActor {
         Ok(())
     }
 
-    async fn wait_for_writer_match(
-        writer: &DataWriterAsync<StdRuntime, DdsEnvelope>,
-        max_wait: TokioDuration,
-    ) -> Result<()> {
-        let poll_interval = TokioDuration::from_millis(500);
-
-        tokio::time::timeout(max_wait, async {
-            loop {
-                let status = writer
-                    .get_publication_matched_status()
-                    .await
-                    .map_err(|e| RpcError::Transport(format!("match status error: {e:?}")))?;
-
-                if status.current_count > 0 {
-                    return Ok(());
-                }
-                tokio::time::sleep(poll_interval).await;
-            }
-        })
-        .await
-        .map_err(|_| RpcError::Transport("writer match timeout".into()))?
-    }
-
     async fn create_writer(&mut self, topic: &str) -> Result<()> {
         // ---
         let tid = self.transport_id.as_str();
 
-        log_debug!("{tid}: creating DataWriter for topic {topic}");
+        log_debug!("{tid}: create_writer called for topic {topic}...");
+        log_debug!("{tid}: creating DataWriter for topic {topic}, with typename:{DDS_TYPE_NAME}");
 
         // Create topic
         let topic_obj = self
             .participant
             .create_topic::<DdsEnvelope>(
                 topic,
-                topic, // type_name same as topic_name for simplicity
+                DDS_TYPE_NAME, // Constant type name for all DdsEnvelope topics
                 QosKind::Default,
                 None::<()>, // No listener
                 &[],        // No status mask
@@ -404,12 +406,24 @@ impl DdsActor {
             .await
             .map_err(|e| RpcError::Transport(format!("create_datawriter failed: {e:?}")))?;
 
+        let status = writer.get_publication_matched_status().await.map_err(|e| {
+            RpcError::Transport(format!(
+                "create_datawriter (get_publication_matched_status) failed: {e:?}"
+            ))
+        })?;
+
+        log_debug!(
+            "{tid}: publication matched count = {:?}",
+            status.current_count
+        );
+        log_debug!("{tid}: writer created for topic {topic}");
+
         self.writers.insert(topic.to_string(), writer);
-        log_debug!("{tid}: created DataWriter for topic {topic}");
+        log_debug!("{tid}: creating DataWriter for topic {topic}...SUCCESS");
         Ok(())
     }
 
-    async fn handle_subscribe(&mut self, topic: String, resp: oneshot::Sender<Result<()>>) {
+    async fn handle_subscribe(&mut self, topic: &String) -> Result<()> {
         // ---
 
         log_debug!(
@@ -417,22 +431,21 @@ impl DdsActor {
             self.transport_id,
         );
 
-        let result = self.create_reader(&topic).await;
-        let _ = resp.send(result);
+        self.create_reader(topic).await
     }
 
     async fn create_reader(&mut self, topic: &str) -> Result<()> {
         // ---
         let tid = &self.transport_id;
 
-        log_debug!("{tid}: creating DataReader for topic {topic}");
+        log_debug!("{tid}: creating DataReader for topic {topic}, with typename:{DDS_TYPE_NAME}");
 
         // Create topic
         let topic_obj = self
             .participant
             .create_topic::<DdsEnvelope>(
                 topic,
-                topic, // type_name same as topic_name
+                DDS_TYPE_NAME, // Constant type name for all DdsEnvelope topics
                 QosKind::Default,
                 None::<()>,
                 &[],
@@ -451,6 +464,7 @@ impl DdsActor {
         let reader_qos = build_rpc_reader_qos();
 
         // Create DataReader
+        log_debug!("{tid}: calling subscriber.create_datareader for topic {topic}");
         let reader = subscriber
             .create_datareader::<DdsEnvelope>(
                 &topic_obj,
@@ -461,13 +475,17 @@ impl DdsActor {
             .await
             .map_err(|e| RpcError::Transport(format!("create_datareader failed: {e:?}")))?;
 
-        log_debug!("{tid}: created DataReader for topic {topic}");
+        log_debug!("{tid}: created DataReader for topic {topic}...done");
 
         // Spawn task to poll this reader
         let transport_id = self.transport_id.clone();
         let topic_name = topic.to_string();
         let subscribers = Arc::clone(&self.subscribers);
         let shutdown_rx = self.shutdown_tx.subscribe();
+
+        log_debug!(
+            "{tid}: spawning task to poll DataReader for topic {topic} (with entrypoint run_topic_reader)"
+        );
 
         let handle = tokio::spawn(async move {
             run_topic_reader(transport_id, topic_name, reader, subscribers, shutdown_rx).await;
@@ -587,10 +605,8 @@ async fn drain_reader(
         };
 
         log_info!(
-            "{}: received {} samples on topic {}",
-            transport_id,
+            "{transport_id}: received {} samples on topic {topic}",
             samples.len(),
-            topic
         );
 
         for (i, sample) in samples.iter().enumerate() {
@@ -725,8 +741,9 @@ impl Transport for DustddsTransport {
     async fn publish(&self, env: Envelope) -> Result<()> {
         // ---
         let topic = env.address.0.to_string();
+
         log_debug!(
-            "{}: publish() called for topic {}",
+            "{}: publish() enqueue for topic {}",
             self.transport_id,
             topic
         );
@@ -735,20 +752,35 @@ impl Transport for DustddsTransport {
 
         self.cmd_tx
             .send(Cmd::Publish {
-                topic,
+                topic: topic.clone(),
                 env,
                 resp: tx,
             })
             .await
             .map_err(|e| {
-                let msg = format!("actor command channel closed:{e}");
-                RpcError::Transport(msg)
+                RpcError::Transport(format!(
+                    "{}: actor command channel closed: {e}",
+                    self.transport_id
+                ))
             })?;
 
-        rx.await.map_err(|e| {
-            let msg = format!("actor responder channel read failed:{e}");
-            RpcError::Transport(msg)
-        })?
+        log_debug!(
+            "{}: publish() waiting for Publish response from actor for {topic}...",
+            self.transport_id,
+        );
+
+        let status = rx.await.map_err(|e| {
+            RpcError::Transport(format!(
+                "{}: actor responder channel read failed: {e}",
+                self.transport_id
+            ))
+        })?;
+
+        log_debug!(
+            "{}: publish() waiting for Publish response from actor for {topic}...done, status:{status:?}",
+            self.transport_id,
+        );
+        Ok(())
     }
 
     async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
@@ -865,6 +897,71 @@ fn parse_domain_id(uri: Option<&str>) -> u16 {
         );
         0
     })
+}
+
+async fn wait_for_matched_reader(
+    tid: &str,
+    topic: &str,
+    writer: &DataWriterAsync<StdRuntime, DdsEnvelope>,
+    timeout_secs: u64,
+) -> Result<()> {
+    // ---
+
+    log_debug!("{tid}: wait_for_matched_reader, topic:{topic}");
+
+    // Check FIRST - avoid race condition
+    let status = writer.get_publication_matched_status().await.map_err(|e| {
+        RpcError::Transport(format!("get_publication_matched_status failed: {e:?}"))
+    })?;
+
+    if status.current_count > 0 {
+        log_debug!(
+            "{tid}: already matched {} readers for topic {topic}",
+            status.current_count
+        );
+        return Ok(()); // ← Server would return here and succeed!
+    }
+
+    // Only set up WaitSet if count is 0
+    log_debug!("{tid}: wait_for_matched_reader, topic:{topic}");
+
+    let status_condition = writer.get_statuscondition();
+    status_condition
+        .set_enabled_statuses(&[StatusKind::PublicationMatched])
+        .await
+        .map_err(|e| RpcError::Transport(format!("set_enabled_statuses failed: {e:?}")))?;
+
+    let mut waitset = WaitSetAsync::new();
+    waitset
+        .attach_condition(ConditionAsync::StatusCondition(status_condition))
+        .await
+        .map_err(|e| RpcError::Transport(format!("attach_condition failed: {e:?}")))?;
+
+    let timeout = DdsDuration::new(timeout_secs as i32, 0);
+
+    // Wait for publication match
+    waitset.wait(timeout).await.map_err(|e| {
+        RpcError::Transport(format!(
+            "{tid}: no matched readers for topic {topic} within {timeout_secs}s: {e:?}"
+        ))
+    })?;
+
+    // Verify we actually have a match
+    let status = writer.get_publication_matched_status().await.map_err(|e| {
+        RpcError::Transport(format!("get_publication_matched_status failed: {e:?}"))
+    })?;
+
+    if status.current_count == 0 {
+        return Err(RpcError::Transport(format!(
+            "{tid}: no matched readers for topic {topic}"
+        )));
+    }
+
+    log_debug!(
+        "{tid}: matched {} readers for topic {topic}",
+        status.current_count
+    );
+    Ok(())
 }
 
 #[test]
