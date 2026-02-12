@@ -123,18 +123,26 @@ struct DdsEnvelope {
     data: Vec<u8>,
 }
 
-impl From<&Envelope> for DdsEnvelope {
-    fn from(env: &Envelope) -> Self {
-        Self {
+impl TryFrom<&Envelope> for DdsEnvelope {
+    type Error = RpcError;
+
+    fn try_from(env: &Envelope) -> Result<Self> {
+        let data = serde_json::to_vec(env)
+            .map_err(|e| RpcError::Transport(format!("DDS envelope serialization failed: {e}")))?;
+
+        Ok(Self {
             topic: env.address.0.as_ref().to_string(),
-            data: serde_json::to_vec(env).expect("Envelope serialization should not fail"),
-        }
+            data,
+        })
     }
 }
 
-impl From<DdsEnvelope> for Envelope {
-    fn from(dds_env: DdsEnvelope) -> Self {
-        serde_json::from_slice(&dds_env.data).expect("Envelope deserialization should not fail")
+impl TryFrom<DdsEnvelope> for Envelope {
+    type Error = RpcError;
+
+    fn try_from(dds_env: DdsEnvelope) -> Result<Self> {
+        serde_json::from_slice(&dds_env.data)
+            .map_err(|e| RpcError::Transport(format!("DDS envelope deserialization failed: {e}")))
     }
 }
 
@@ -305,7 +313,7 @@ impl DdsActor {
         })?;
 
         // Convert Envelope to DdsEnvelope for DDS transmission
-        let dds_env = DdsEnvelope::from(&env);
+        let dds_env = DdsEnvelope::try_from(&env)?;
 
         // Wait for acknowledgment ONLY on first publish to verify discovery
         if !self
@@ -559,8 +567,8 @@ async fn drain_reader(
             .take(
                 10,
                 &[SampleStateKind::NotRead],
-                &ANY_VIEW_STATE,
-                &ANY_INSTANCE_STATE,
+                ANY_VIEW_STATE,
+                ANY_INSTANCE_STATE,
             )
             .await
         {
