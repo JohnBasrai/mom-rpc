@@ -54,20 +54,25 @@
 
 use dust_dds::{
     //
-    domain::domain_participant::DomainParticipant,
-    domain::domain_participant_factory::DomainParticipantFactory,
+    dds_async::{
+        data_reader::DataReaderAsync, data_writer::DataWriterAsync,
+        domain_participant::DomainParticipantAsync,
+        domain_participant_factory::DomainParticipantFactoryAsync,
+    },
     infrastructure::qos::{DataReaderQos, DataWriterQos, QosKind},
     infrastructure::qos_policy::{
         //
+        DurabilityQosPolicy,
         DurabilityQosPolicyKind,
+        HistoryQosPolicy,
         HistoryQosPolicyKind,
+        ReliabilityQosPolicy,
         ReliabilityQosPolicyKind,
     },
-    infrastructure::status::NO_STATUS,
-    infrastructure::time::DurationKind,
-    listener::NO_LISTENER,
-    publication::data_writer::DataWriter,
-    subscription::data_reader::DataReader,
+    infrastructure::sample_info::{SampleStateKind, ANY_INSTANCE_STATE, ANY_VIEW_STATE},
+    infrastructure::time::{Duration, DurationKind},
+    infrastructure::type_support::DdsType,
+    std_runtime::StdRuntime,
 };
 
 use std::collections::HashMap;
@@ -87,6 +92,40 @@ use crate::{
     Transport,
     TransportPtr,
 };
+
+//
+// DDS-compatible wrapper for Envelope
+//
+
+/// A DDS-compatible wrapper for Envelope that can be published over DDS.
+///
+/// DDS requires all published types to implement TypeSupport, which means
+/// all fields must be DDS-serializable. Since Envelope contains Arc<str> and
+/// Bytes which aren't directly DDS-compatible, we serialize the entire envelope
+/// to JSON bytes for DDS transmission.
+#[derive(Clone, Debug, DdsType, serde::Serialize, serde::Deserialize)]
+struct DdsEnvelope {
+    /// JSON-serialized Envelope
+    #[dust_dds(key)]
+    topic: String,
+    /// JSON-serialized envelope data
+    data: Vec<u8>,
+}
+
+impl From<&Envelope> for DdsEnvelope {
+    fn from(env: &Envelope) -> Self {
+        Self {
+            topic: env.address.0.as_ref().to_string(),
+            data: serde_json::to_vec(env).expect("Envelope serialization should not fail"),
+        }
+    }
+}
+
+impl From<DdsEnvelope> for Envelope {
+    fn from(dds_env: DdsEnvelope) -> Self {
+        serde_json::from_slice(&dds_env.data).expect("Envelope deserialization should not fail")
+    }
+}
 
 //
 // Logging macros (transport-local for now; intended to be shared later)
@@ -186,7 +225,10 @@ impl DustddsTransport {
     // ---
 
     /// Creates a new dust_dds transport with the given `DomainParticipant`.
-    pub fn create(transport_id: impl Into<String>, participant: DomainParticipant) -> TransportPtr {
+    pub fn create(
+        transport_id: impl Into<String>,
+        participant: DomainParticipantAsync<StdRuntime>,
+    ) -> TransportPtr {
         // ---
 
         let transport_id = transport_id.into();
@@ -201,7 +243,6 @@ impl DustddsTransport {
             cmd_rx,
             subscribers: Arc::clone(&subscribers),
             writers: HashMap::new(),
-            readers: HashMap::new(),
             reader_tasks: Vec::new(),
             has_sent_first_message: HashMap::new(),
         };
@@ -225,11 +266,10 @@ impl DustddsTransport {
 struct DdsActor {
     // ---
     transport_id: String, // for logging only
-    participant: DomainParticipant,
+    participant: DomainParticipantAsync<StdRuntime>,
     cmd_rx: mpsc::Receiver<Cmd>,
     subscribers: SubscriberMap,
-    writers: HashMap<String, DataWriter<Envelope>>,
-    readers: HashMap<String, DataReader<Envelope>>,
+    writers: HashMap<String, DataWriterAsync<StdRuntime, DdsEnvelope>>,
     reader_tasks: Vec<JoinHandle<()>>,
     has_sent_first_message: HashMap<String, bool>, // Track first publish per topic for discovery verification
 }
@@ -269,14 +309,17 @@ impl DdsActor {
                 "{}: creating new DataWriter for topic {topic}",
                 self.transport_id,
             );
-            self.create_writer(&topic)?;
+            self.create_writer(&topic).await?;
         }
 
         let writer = self.writers.get(&topic).ok_or_else(|| {
             RpcError::Transport(format!("DataWriter not found for topic {topic}"))
         })?;
 
-        writer.write(&env, None).map_err(|e| {
+        // Convert Envelope to DdsEnvelope for DDS transmission
+        let dds_env = DdsEnvelope::from(&env);
+
+        writer.write(dds_env, None).await.map_err(|e| {
             let msg = format!(
                 "{}: write failed for topic {topic}: {e:?}",
                 self.transport_id
@@ -312,7 +355,7 @@ impl DdsActor {
         Ok(())
     }
 
-    fn create_writer(&mut self, topic: &str) -> Result<()> {
+    async fn create_writer(&mut self, topic: &str) -> Result<()> {
         // ---
 
         log_debug!(
@@ -324,19 +367,21 @@ impl DdsActor {
         // Create topic
         let topic_obj = self
             .participant
-            .create_topic::<Envelope>(
+            .create_topic::<DdsEnvelope>(
                 topic,
                 topic, // type_name same as topic_name for simplicity
                 QosKind::Default,
-                NO_LISTENER,
-                NO_STATUS,
+                None::<()>, // No listener
+                &[],        // No status mask
             )
+            .await
             .map_err(|e| RpcError::Transport(format!("create_topic failed: {e:?}")))?;
 
         // Create publisher
         let publisher = self
             .participant
-            .create_publisher(QosKind::Default, NO_LISTENER, NO_STATUS)
+            .create_publisher(QosKind::Default, None::<()>, &[])
+            .await
             .map_err(|e| RpcError::Transport(format!("create_publisher failed: {e:?}")))?;
 
         // Build custom QoS for RPC semantics
@@ -344,12 +389,13 @@ impl DdsActor {
 
         // Create DataWriter
         let writer = publisher
-            .create_datawriter::<Envelope>(
+            .create_datawriter::<DdsEnvelope>(
                 &topic_obj,
                 QosKind::Specific(writer_qos),
-                NO_LISTENER,
-                NO_STATUS,
+                None::<()>,
+                &[],
             )
+            .await
             .map_err(|e| RpcError::Transport(format!("create_datawriter failed: {e:?}")))?;
 
         self.writers.insert(topic.to_string(), writer);
@@ -370,22 +416,12 @@ impl DdsActor {
             topic
         );
 
-        let result = self.create_reader(&topic);
+        let result = self.create_reader(&topic).await;
         let _ = resp.send(result);
     }
 
-    fn create_reader(&mut self, topic: &str) -> Result<()> {
+    async fn create_reader(&mut self, topic: &str) -> Result<()> {
         // ---
-
-        // Skip if reader already exists for this topic
-        if self.readers.contains_key(topic) {
-            log_debug!(
-                "{}: DataReader already exists for topic {}",
-                self.transport_id,
-                topic
-            );
-            return Ok(());
-        }
 
         log_debug!(
             "{}: creating DataReader for topic {}",
@@ -396,19 +432,21 @@ impl DdsActor {
         // Create topic
         let topic_obj = self
             .participant
-            .create_topic::<Envelope>(
+            .create_topic::<DdsEnvelope>(
                 topic,
                 topic, // type_name same as topic_name
                 QosKind::Default,
-                NO_LISTENER,
-                NO_STATUS,
+                None::<()>,
+                &[],
             )
+            .await
             .map_err(|e| RpcError::Transport(format!("create_topic failed: {e:?}")))?;
 
         // Create subscriber
         let subscriber = self
             .participant
-            .create_subscriber(QosKind::Default, NO_LISTENER, NO_STATUS)
+            .create_subscriber(QosKind::Default, None::<()>, &[])
+            .await
             .map_err(|e| RpcError::Transport(format!("create_subscriber failed: {e:?}")))?;
 
         // Build custom QoS for RPC semantics
@@ -416,12 +454,13 @@ impl DdsActor {
 
         // Create DataReader
         let reader = subscriber
-            .create_datareader::<Envelope>(
+            .create_datareader::<DdsEnvelope>(
                 &topic_obj,
                 QosKind::Specific(reader_qos),
-                NO_LISTENER,
-                NO_STATUS,
+                None::<()>,
+                &[],
             )
+            .await
             .map_err(|e| RpcError::Transport(format!("create_datareader failed: {e:?}")))?;
 
         log_debug!(
@@ -440,7 +479,6 @@ impl DdsActor {
         });
 
         self.reader_tasks.push(handle);
-        self.readers.insert(topic.to_string(), reader);
         Ok(())
     }
 
@@ -456,30 +494,72 @@ impl DdsActor {
 async fn poll_reader(
     transport_id: String,
     topic: String,
-    reader: DataReader<Envelope>,
+    reader: DataReaderAsync<StdRuntime, DdsEnvelope>,
     subscribers: SubscriberMap,
 ) {
-    // ---
-
     log_debug!("{}: polling DataReader for topic {}", transport_id, topic);
 
     loop {
-        // Poll for data periodically
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        match reader
+            .read(
+                10, // Try reading up to 10 samples
+                &[SampleStateKind::Read, SampleStateKind::NotRead],
+                &ANY_VIEW_STATE,
+                &ANY_INSTANCE_STATE,
+            )
+            .await
+        {
+            Ok(samples) => {
+                if !samples.is_empty() {
+                    log_info!(
+                        "{}: received {} samples on topic {}",
+                        transport_id,
+                        samples.len(),
+                        topic
+                    );
+                }
 
-        // Try to read next sample
-        match reader.read_next_sample() {
-            Ok(sample) if sample.sample_info().valid_data => {
-                if let Some(env) = sample.data() {
-                    handle_incoming(&transport_id, &topic, Arc::clone(&subscribers), env.clone())
-                        .await;
+                for (i, sample) in samples.iter().enumerate() {
+                    log_debug!(
+                        "{}: sample {}: data.is_some()={}",
+                        transport_id,
+                        i,
+                        sample.data.is_some()
+                    );
+
+                    if let Some(dds_env) = &sample.data {
+                        log_debug!(
+                            "{}: DdsEnvelope key={}, data_len={}",
+                            transport_id,
+                            dds_env.topic,
+                            dds_env.data.len()
+                        );
+
+                        match serde_json::from_slice::<Envelope>(&dds_env.data) {
+                            Ok(env) => {
+                                log_info!("{}: successfully deserialized envelope", transport_id);
+                                handle_incoming(
+                                    &transport_id,
+                                    &topic,
+                                    Arc::clone(&subscribers),
+                                    env,
+                                )
+                                .await;
+                            }
+                            Err(e) => {
+                                log_error!("{}: deserialization error: {:?}", transport_id, e);
+                            }
+                        }
+                    }
                 }
             }
-            Ok(_) => {
-                // No valid data or metadata-only sample
-            }
             Err(e) => {
-                log_debug!("{transport_id}: read error on topic {topic}: {e:?}");
+                // Only log non-NoData errors to reduce spam
+                let e_str = format!("{:?}", e);
+                if !e_str.contains("NoData") {
+                    log_debug!("{}: read error on topic {}: {:?}", transport_id, topic, e);
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
         }
     }
@@ -543,11 +623,16 @@ fn build_rpc_writer_qos() -> DataWriterQos {
     // ---
 
     DataWriterQos {
-        reliability: ReliabilityQosPolicyKind::Reliable {
-            max_blocking_time: DurationKind::Finite(std::time::Duration::ZERO),
+        reliability: ReliabilityQosPolicy {
+            kind: ReliabilityQosPolicyKind::Reliable,
+            max_blocking_time: DurationKind::Finite(Duration::new(0, 0)),
         },
-        history: HistoryQosPolicyKind::KeepLast { depth: 1 },
-        durability: DurabilityQosPolicyKind::Volatile,
+        history: HistoryQosPolicy {
+            kind: HistoryQosPolicyKind::KeepLast(1),
+        },
+        durability: DurabilityQosPolicy {
+            kind: DurabilityQosPolicyKind::Volatile,
+        },
         ..Default::default()
     }
 }
@@ -557,11 +642,16 @@ fn build_rpc_reader_qos() -> DataReaderQos {
     // ---
 
     DataReaderQos {
-        reliability: ReliabilityQosPolicyKind::Reliable {
-            max_blocking_time: DurationKind::Finite(std::time::Duration::ZERO),
+        reliability: ReliabilityQosPolicy {
+            kind: ReliabilityQosPolicyKind::Reliable,
+            max_blocking_time: DurationKind::Finite(Duration::new(0, 0)),
         },
-        history: HistoryQosPolicyKind::KeepLast { depth: 1 },
-        durability: DurabilityQosPolicyKind::Volatile,
+        history: HistoryQosPolicy {
+            kind: HistoryQosPolicyKind::KeepLast(1),
+        },
+        durability: DurabilityQosPolicy {
+            kind: DurabilityQosPolicyKind::Volatile,
+        },
         ..Default::default()
     }
 }
@@ -674,10 +764,12 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // Parse domain ID from transport_uri (format: dds:45)
     let domain_id = parse_domain_id(config.transport_uri.as_deref());
 
-    let participant_factory = DomainParticipantFactory::get_instance();
+    // Get the singleton factory instance for StdRuntime
+    let participant_factory = DomainParticipantFactoryAsync::get_instance();
 
     let participant = participant_factory
-        .create_participant(domain_id, QosKind::Default, NO_LISTENER, NO_STATUS)
+        .create_participant(domain_id as i32, QosKind::Default, None::<()>, &[])
+        .await
         .map_err(|e| {
             let msg = format!("Failed to create DomainParticipant on domain {domain_id}: {e:?}");
             log_error!("{msg}");
@@ -717,4 +809,20 @@ fn parse_domain_id(uri: Option<&str>) -> u16 {
         );
         0
     })
+}
+
+#[test]
+fn test_dds_envelope_roundtrip() {
+    // --
+    let env = Envelope::request(
+        crate::Address::from("hello"),
+        "method".into(),
+        bytes::Bytes::new(),
+        "CorrelationId".into(),
+        "reply_to".into(),
+        "application/json".into(),
+    );
+    let dds_env = DdsEnvelope::from(&env);
+    let env2 = Envelope::from(dds_env);
+    assert_eq!(env.correlation_id, env2.correlation_id);
 }

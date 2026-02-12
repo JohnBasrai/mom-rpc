@@ -15,7 +15,7 @@ documentation = "https://docs.rs/mom-rpc"
 [dependencies]
 async-trait  = "0.1"
 bytes        = { version = "1", features = ["serde"] }
-dust_dds     = { version = "0.14", optional = true }
+dust_dds     = { version = "0.14", features = ["dcps"], optional = true }
 futures      = { version = "0.3", optional = true } # For DDS
 futures-lite = { version = "2", optional = true }
 lapin        = { version = "4", optional = true }

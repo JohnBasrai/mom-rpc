@@ -12,6 +12,7 @@ set -euo pipefail
 FEATURE="${1:-}"
 DOMAIN_ID="${DDS_DOMAIN:-0}"
 TRANSPORT_URI="dds:${DOMAIN_ID}"
+NO_CLEAN="${2:-}"
 
 # ---
 
@@ -62,7 +63,9 @@ cleanup() {
     fi
     
     # Remove temp files
-    rm -f server.log client.log *.build.log
+    if [ -z "${NO_CLEAN}" ] ; then
+        rm -f server.log client.log *.build.log
+    fi
 }
 
 trap cleanup EXIT INT TERM
