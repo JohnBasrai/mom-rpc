@@ -104,7 +104,6 @@ SERVER_PID=$!
 echo "    Server PID: $SERVER_PID"
 echo "    Transport URI: $TRANSPORT_URI"
 echo "    Waiting for server to initialize and DDS discovery..."
-sleep 3
 
 # Check if server is still running
 if ! kill -0 "$SERVER_PID" 2>/dev/null; then

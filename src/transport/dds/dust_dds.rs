@@ -298,19 +298,17 @@ impl DdsActor {
 
     async fn handle_publish(&mut self, topic: String, env: Envelope) -> Result<()> {
         // ---
-        log_debug!(
-            "{}: handle_publish() called for topic {topic}",
-            self.transport_id,
-        );
+        let tid = self.transport_id.as_str();
+
+        log_debug!("{tid}: handle_publish() called for topic {topic}");
 
         // Get or create DataWriter for this topic
         if !self.writers.contains_key(&topic) {
-            log_debug!(
-                "{}: creating new DataWriter for topic {topic}",
-                self.transport_id,
-            );
+            log_debug!("{tid}: creating new DataWriter for topic {topic}");
             self.create_writer(&topic).await?;
         }
+
+        let tid = self.transport_id.as_str();
 
         let writer = self.writers.get(&topic).ok_or_else(|| {
             RpcError::Transport(format!("DataWriter not found for topic {topic}"))
@@ -319,15 +317,6 @@ impl DdsActor {
         // Convert Envelope to DdsEnvelope for DDS transmission
         let dds_env = DdsEnvelope::from(&env);
 
-        writer.write(dds_env, None).await.map_err(|e| {
-            let msg = format!(
-                "{}: write failed for topic {topic}: {e:?}",
-                self.transport_id
-            );
-            log_error!("{msg}");
-            RpcError::Transport(msg)
-        })?;
-
         // Wait for acknowledgment ONLY on first publish to verify discovery
         if !self
             .has_sent_first_message
@@ -335,34 +324,53 @@ impl DdsActor {
             .copied()
             .unwrap_or(false)
         {
-            log_debug!(
-                "{}: first publish on topic {topic}, waiting for discovery...",
-                self.transport_id
-            );
+            log_debug!("{tid}: first publish on topic {topic}, waiting for discovery...");
 
-            // Simple delay to allow discovery to complete
-            // dust_dds handles discovery automatically, no explicit wait needed
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let timeout = tokio::time::Duration::from_millis(1000);
+            Self::wait_for_writer_match(writer, timeout).await?;
 
             self.has_sent_first_message.insert(topic.clone(), true);
-            log_debug!(
-                "{}: discovery complete for topic {topic}",
-                self.transport_id
-            );
+            log_debug!("{tid}: discovery complete for topic {topic}");
         }
 
-        log_debug!("{}: published message on topic {topic}", self.transport_id);
+        writer.write(dds_env, None).await.map_err(|e| {
+            let msg = format!("{tid}: write failed for topic {topic}: {e:?}");
+            log_error!("{msg}");
+            RpcError::Transport(msg)
+        })?;
+
+        log_debug!("{}: published message on topic {topic}", tid);
         Ok(())
+    }
+
+    async fn wait_for_writer_match(
+        writer: &DataWriterAsync<StdRuntime, DdsEnvelope>,
+        max_wait: tokio::time::Duration,
+    ) -> Result<()> {
+        let poll_interval = tokio::time::Duration::from_millis(500);
+
+        tokio::time::timeout(max_wait, async {
+            loop {
+                let status = writer
+                    .get_publication_matched_status()
+                    .await
+                    .map_err(|e| RpcError::Transport(format!("match status error: {e:?}")))?;
+
+                if status.current_count > 0 {
+                    return Ok(());
+                }
+                tokio::time::sleep(poll_interval).await;
+            }
+        })
+        .await
+        .map_err(|_| RpcError::Transport("writer match timeout".into()))?
     }
 
     async fn create_writer(&mut self, topic: &str) -> Result<()> {
         // ---
+        let tid = self.transport_id.as_str();
 
-        log_debug!(
-            "{}: creating DataWriter for topic {}",
-            self.transport_id,
-            topic
-        );
+        log_debug!("{tid}: creating DataWriter for topic {topic}");
 
         // Create topic
         let topic_obj = self
@@ -399,11 +407,7 @@ impl DdsActor {
             .map_err(|e| RpcError::Transport(format!("create_datawriter failed: {e:?}")))?;
 
         self.writers.insert(topic.to_string(), writer);
-        log_debug!(
-            "{}: created DataWriter for topic {}",
-            self.transport_id,
-            topic
-        );
+        log_debug!("{tid}: created DataWriter for topic {topic}");
         Ok(())
     }
 
@@ -411,9 +415,8 @@ impl DdsActor {
         // ---
 
         log_debug!(
-            "{}: handle_subscribe() called for topic {}",
+            "{}: handle_subscribe() called for topic {topic}",
             self.transport_id,
-            topic
         );
 
         let result = self.create_reader(&topic).await;
@@ -422,12 +425,9 @@ impl DdsActor {
 
     async fn create_reader(&mut self, topic: &str) -> Result<()> {
         // ---
+        let tid = &self.transport_id;
 
-        log_debug!(
-            "{}: creating DataReader for topic {}",
-            self.transport_id,
-            topic
-        );
+        log_debug!("{tid}: creating DataReader for topic {topic}");
 
         // Create topic
         let topic_obj = self
@@ -463,11 +463,7 @@ impl DdsActor {
             .await
             .map_err(|e| RpcError::Transport(format!("create_datareader failed: {e:?}")))?;
 
-        log_debug!(
-            "{}: created DataReader for topic {}",
-            self.transport_id,
-            topic
-        );
+        log_debug!("{tid}: created DataReader for topic {topic}");
 
         // Spawn task to poll this reader
         let transport_id = self.transport_id.clone();
@@ -497,47 +493,48 @@ async fn poll_reader(
     reader: DataReaderAsync<StdRuntime, DdsEnvelope>,
     subscribers: SubscriberMap,
 ) {
-    log_debug!("{}: polling DataReader for topic {}", transport_id, topic);
+    log_debug!("{transport_id}: polling DataReader for topic {topic}");
 
     loop {
         match reader
-            .read(
-                10, // Try reading up to 10 samples
-                &[SampleStateKind::Read, SampleStateKind::NotRead],
+            .take(
+                10,                          // Try taking up to 10 samples
+                &[SampleStateKind::NotRead], // ✅ only unread samples
                 &ANY_VIEW_STATE,
                 &ANY_INSTANCE_STATE,
             )
             .await
         {
             Ok(samples) => {
-                if !samples.is_empty() {
-                    log_info!(
-                        "{}: received {} samples on topic {}",
-                        transport_id,
-                        samples.len(),
-                        topic
-                    );
+                if samples.is_empty() {
+                    // ✅ avoid busy-spin when there's no data
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                    continue;
                 }
+
+                log_info!(
+                    "{}: received {} samples on topic {}",
+                    transport_id,
+                    samples.len(),
+                    topic
+                );
 
                 for (i, sample) in samples.iter().enumerate() {
                     log_debug!(
-                        "{}: sample {}: data.is_some()={}",
-                        transport_id,
-                        i,
+                        "{transport_id}: sample {i}: data.is_some()={}",
                         sample.data.is_some()
                     );
 
                     if let Some(dds_env) = &sample.data {
                         log_debug!(
-                            "{}: DdsEnvelope key={}, data_len={}",
-                            transport_id,
+                            "{transport_id}: DdsEnvelope key={}, data_len={}",
                             dds_env.topic,
                             dds_env.data.len()
                         );
 
                         match serde_json::from_slice::<Envelope>(&dds_env.data) {
                             Ok(env) => {
-                                log_info!("{}: successfully deserialized envelope", transport_id);
+                                log_info!("{transport_id}: successfully deserialized envelope");
                                 handle_incoming(
                                     &transport_id,
                                     &topic,
@@ -547,17 +544,17 @@ async fn poll_reader(
                                 .await;
                             }
                             Err(e) => {
-                                log_error!("{}: deserialization error: {:?}", transport_id, e);
+                                log_error!("{transport_id}: deserialization error: {e:?}",);
                             }
                         }
                     }
                 }
             }
             Err(e) => {
-                // Only log non-NoData errors to reduce spam
+                // Keep your existing "NoData" spam suppression behavior.
                 let e_str = format!("{:?}", e);
                 if !e_str.contains("NoData") {
-                    log_debug!("{}: read error on topic {}: {:?}", transport_id, topic, e);
+                    log_debug!("{transport_id}: take error on topic {topic}: {e:?}");
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
@@ -699,9 +696,8 @@ impl Transport for DustddsTransport {
 
         let topic = sub.0.as_ref().to_string();
         log_debug!(
-            "{}: subscribe() called for topic {}",
+            "{}: subscribe() called for topic {topic}",
             self.transport_id,
-            topic
         );
 
         let (tx, rx) = mpsc::channel(16);
