@@ -34,6 +34,7 @@ use tokio::time;
 
 use crate::{
     // ---
+    log_debug,
     Address,
     Envelope,
     Result,
@@ -131,8 +132,7 @@ impl RpcClient {
                             if let Some(inner) = weak.upgrade() {
                                 let client = RpcClient { inner };
                                 if let Err(_err) = client.handle_envelope(env) {
-                                    #[cfg(feature = "logging")]
-                                    log::warn!("client response handling error: {_err}");
+                                    crate::log_warn!("client response handling error: {_err}");
                                 }
                             } else {
                                 // Inner was dropped, exit loop
@@ -141,8 +141,7 @@ impl RpcClient {
                         }
                         None => {
                             // Transport closed or subscription dropped.
-                            #[cfg(feature = "logging")]
-                            log::debug!("transport closed or subscription dropped");
+                            log_debug!("transport closed or subscription dropped");
                             break;
                         }
                     }
@@ -295,8 +294,7 @@ impl RpcClient {
 
         if let Some(tx) = tx {
             if tx.send(payload).is_err() {
-                #[cfg(feature = "logging")]
-                log::debug!(
+                log_debug!(
                     "response arrived after request abandoned (correlation_id: {correlation_id})"
                 );
             }

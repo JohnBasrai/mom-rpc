@@ -27,6 +27,8 @@
 use super::{wrap_handler, BoxedHandler};
 use crate::{
     // ---
+    log_debug,
+    log_warn,
     Address,
     Envelope,
     Result,
@@ -228,20 +230,17 @@ impl RpcServer {
                     match msg {
                         Some(env) => {
                             if let Err(_err) = self.handle_envelope(env).await {
-                                #[cfg(feature = "logging")]
-                                log::warn!("server request handling error: {_err}");
+                                log_warn!("server request handling error: {_err}");
                             }
                         }
                         None => {
-                            #[cfg(feature = "logging")]
-                            log::debug!("transport closed or subscription dropped");
+                            log_debug!("transport closed or subscription dropped");
                             break;
                         }
                     }
                 }
                 _ = &mut shutdown_rx => {
-                    #[cfg(feature = "logging")]
-                    log::debug!("shutdown signal received");
+                    log_debug!("shutdown signal received");
                     break;
                 }
             }

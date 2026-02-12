@@ -10,9 +10,11 @@ set -euo pipefail
 # Example: ./dds.sh transport_dust_dds
 
 FEATURE="${1:-}"
-DOMAIN_ID="${DDS_DOMAIN:-0}"
-TRANSPORT_URI="dds:${DOMAIN_ID}"
+: "${DDS_DOMAIN:=0}"
+: "${TRANSPORT_URI:=dds:${DOMAIN_ID}}"
+NO_CLEAN=
 NO_CLEAN="${2:-}"
+
 
 # ---
 
@@ -124,7 +126,8 @@ cargo --quiet run --example sensor_client --features "$FEATURE" >& client.log
 
 if grep -q  "Temperature" client.log && \
    grep -q  "Humidity"    client.log && \
-   grep -q  "Pressure"    client.log ; then
+   grep -q  "Pressure"    client.log && \
+   [ -z "$(grep ERROR client.log)" ]; then
     echo ""
     echo "✅ DDS integration test PASSED"
     echo ""

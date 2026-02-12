@@ -55,34 +55,45 @@
 use dust_dds::{
     //
     dds_async::{
-        data_reader::DataReaderAsync, data_writer::DataWriterAsync,
+        //
+        data_reader::DataReaderAsync,
+        data_writer::DataWriterAsync,
         domain_participant::DomainParticipantAsync,
         domain_participant_factory::DomainParticipantFactoryAsync,
+        wait_set::{ConditionAsync, WaitSetAsync},
     },
-    infrastructure::qos::{DataReaderQos, DataWriterQos, QosKind},
-    infrastructure::qos_policy::{
-        //
-        DurabilityQosPolicy,
-        DurabilityQosPolicyKind,
-        HistoryQosPolicy,
-        HistoryQosPolicyKind,
-        ReliabilityQosPolicy,
-        ReliabilityQosPolicyKind,
+    infrastructure::{
+        error::DdsError,
+        qos::{DataReaderQos, DataWriterQos, QosKind},
+        qos_policy::{
+            //
+            DurabilityQosPolicy,
+            DurabilityQosPolicyKind,
+            HistoryQosPolicy,
+            HistoryQosPolicyKind,
+            ReliabilityQosPolicy,
+            ReliabilityQosPolicyKind,
+        },
+        sample_info::{SampleStateKind, ANY_INSTANCE_STATE, ANY_VIEW_STATE},
+        status::StatusKind,
+        time::{Duration as DdsDuration, DurationKind},
+        type_support::DdsType,
     },
-    infrastructure::sample_info::{SampleStateKind, ANY_INSTANCE_STATE, ANY_VIEW_STATE},
-    infrastructure::time::{Duration, DurationKind},
-    infrastructure::type_support::DdsType,
     std_runtime::StdRuntime,
 };
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{mpsc, oneshot, watch, RwLock};
 use tokio::task::JoinHandle;
+use tokio::time::Duration as TokioDuration;
 
 use crate::{
     //
+    log_debug,
+    log_error,
+    log_info,
     Envelope,
     Result,
     RpcConfig,
@@ -125,33 +136,6 @@ impl From<DdsEnvelope> for Envelope {
     fn from(dds_env: DdsEnvelope) -> Self {
         serde_json::from_slice(&dds_env.data).expect("Envelope deserialization should not fail")
     }
-}
-
-//
-// Logging macros (transport-local for now; intended to be shared later)
-//
-
-macro_rules! log_debug {
-    ($($arg:tt)*) => {
-        #[cfg(feature = "logging")]
-        log::debug!($($arg)*);
-    };
-}
-
-macro_rules! log_info {
-    ($($arg:tt)*) => {
-        #[cfg(feature = "logging")]
-        log::info!($($arg)*);
-    };
-}
-
-macro_rules! log_error {
-    ($($arg:tt)*) => {
-        #[cfg(feature = "logging")]
-        log::error!($($arg)*);
-        #[cfg(not(feature = "logging"))]
-        eprintln!($($arg)*);
-    };
 }
 
 type SubscriberMap = Arc<RwLock<HashMap<String, Vec<mpsc::Sender<Envelope>>>>>;
@@ -237,11 +221,14 @@ impl DustddsTransport {
         let subscribers = Arc::new(RwLock::new(HashMap::new()));
         let tasks = Arc::new(RwLock::new(Vec::new()));
 
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+
         let actor = DdsActor {
             transport_id: transport_id.clone(),
             participant,
             cmd_rx,
             subscribers: Arc::clone(&subscribers),
+            shutdown_tx,
             writers: HashMap::new(),
             reader_tasks: Vec::new(),
             has_sent_first_message: HashMap::new(),
@@ -269,6 +256,7 @@ struct DdsActor {
     participant: DomainParticipantAsync<StdRuntime>,
     cmd_rx: mpsc::Receiver<Cmd>,
     subscribers: SubscriberMap,
+    shutdown_tx: watch::Sender<bool>,
     writers: HashMap<String, DataWriterAsync<StdRuntime, DdsEnvelope>>,
     reader_tasks: Vec<JoinHandle<()>>,
     has_sent_first_message: HashMap<String, bool>, // Track first publish per topic for discovery verification
@@ -288,9 +276,11 @@ impl DdsActor {
             }
         }
 
-        // Cleanup reader tasks
+        // Request shutdown for all per-topic reader tasks and wait for them to exit.
+        let _ = self.shutdown_tx.send(true);
+
         for handle in self.reader_tasks {
-            handle.abort();
+            let _ = handle.await;
         }
 
         log_info!("{}: DDS actor stopped", self.transport_id);
@@ -326,7 +316,7 @@ impl DdsActor {
         {
             log_debug!("{tid}: first publish on topic {topic}, waiting for discovery...");
 
-            let timeout = tokio::time::Duration::from_millis(1000);
+            let timeout = TokioDuration::from_millis(1000);
             Self::wait_for_writer_match(writer, timeout).await?;
 
             self.has_sent_first_message.insert(topic.clone(), true);
@@ -345,9 +335,9 @@ impl DdsActor {
 
     async fn wait_for_writer_match(
         writer: &DataWriterAsync<StdRuntime, DdsEnvelope>,
-        max_wait: tokio::time::Duration,
+        max_wait: TokioDuration,
     ) -> Result<()> {
-        let poll_interval = tokio::time::Duration::from_millis(500);
+        let poll_interval = TokioDuration::from_millis(500);
 
         tokio::time::timeout(max_wait, async {
             loop {
@@ -469,9 +459,10 @@ impl DdsActor {
         let transport_id = self.transport_id.clone();
         let topic_name = topic.to_string();
         let subscribers = Arc::clone(&self.subscribers);
+        let shutdown_rx = self.shutdown_tx.subscribe();
 
         let handle = tokio::spawn(async move {
-            poll_reader(transport_id, topic_name, reader, subscribers).await;
+            run_topic_reader(transport_id, topic_name, reader, subscribers, shutdown_rx).await;
         });
 
         self.reader_tasks.push(handle);
@@ -486,80 +477,141 @@ impl DdsActor {
     }
 }
 
-/// Polls a `DataReader` and fans out incoming samples to local subscribers.
-async fn poll_reader(
+/// Runs a per-topic reader task that waits for DDS data availability and fans out samples to local subscribers.
+async fn run_topic_reader(
     transport_id: String,
     topic: String,
     reader: DataReaderAsync<StdRuntime, DdsEnvelope>,
     subscribers: SubscriberMap,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) {
-    log_debug!("{transport_id}: polling DataReader for topic {topic}");
+    log_debug!("{transport_id}: starting reader task for topic {topic}");
+
+    // Configure a status condition that triggers when new data is available on this reader.
+    let status_condition = reader.get_statuscondition();
+
+    if let Err(e) = status_condition
+        .set_enabled_statuses(&[StatusKind::DataAvailable])
+        .await
+    {
+        log_error!("{transport_id}: set_enabled_statuses failed for topic {topic}: {e:?}");
+        return;
+    }
+
+    let mut waitset = WaitSetAsync::new();
+    if let Err(e) = waitset
+        .attach_condition(ConditionAsync::StatusCondition(status_condition))
+        .await
+    {
+        log_error!("{transport_id}: attach_condition failed for topic {topic}: {e:?}");
+        return;
+    }
+
+    // NOTE: This is DDS timeout/duration. It is not not std or tokio versions.
+    let one_day = DdsDuration::new(86400, 0);
 
     loop {
-        match reader
+        tokio::select! {
+            _ = shutdown_rx.changed() => {
+                log_debug!("{transport_id}: reader task shutdown requested for topic {topic}");
+                break;
+            }
+
+            res = waitset.wait(one_day) => {
+                let triggered = match res {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log_error!("{transport_id}: waitset.wait failed for topic {topic}: {e:?}");
+                        break;
+                    }
+                };
+
+                for cond in triggered {
+                    match cond.get_trigger_value().await {
+                        Ok(true) => {
+                            if let Err(e) = drain_reader(&transport_id, &topic, &reader, &subscribers).await {
+                                log_error!("{transport_id}: drain_reader error for topic {topic}: {e:?}");
+                                break;
+                            }
+                        }
+                        Ok(false) => { /* ignore */ }
+                        Err(e) => {
+                            log_error!("{transport_id}: get_trigger_value failed for topic {topic}: {e:?}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    log_debug!("{transport_id}: reader task stopped for topic {topic}");
+}
+
+async fn drain_reader(
+    transport_id: &str,
+    topic: &str,
+    reader: &DataReaderAsync<StdRuntime, DdsEnvelope>,
+    subscribers: &SubscriberMap,
+) -> Result<()> {
+    // ---
+    loop {
+        let samples = match reader
             .take(
-                10,                          // Try taking up to 10 samples
-                &[SampleStateKind::NotRead], // ✅ only unread samples
+                10,
+                &[SampleStateKind::NotRead],
                 &ANY_VIEW_STATE,
                 &ANY_INSTANCE_STATE,
             )
             .await
         {
-            Ok(samples) => {
-                if samples.is_empty() {
-                    // ✅ avoid busy-spin when there's no data
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                    continue;
-                }
+            Ok(samples) => samples,
 
-                log_info!(
-                    "{}: received {} samples on topic {}",
-                    transport_id,
-                    samples.len(),
-                    topic
+            Err(DdsError::NoData) => {
+                // Normal drain completion
+                break;
+            }
+
+            Err(e) => {
+                return Err(RpcError::Transport(format!(
+                    "take error on topic {topic}: {e:?}"
+                )));
+            }
+        };
+
+        log_info!(
+            "{}: received {} samples on topic {}",
+            transport_id,
+            samples.len(),
+            topic
+        );
+
+        for (i, sample) in samples.iter().enumerate() {
+            log_debug!(
+                "{transport_id}: sample {i}: data.is_some()={}",
+                sample.data.is_some()
+            );
+
+            if let Some(dds_env) = &sample.data {
+                log_debug!(
+                    "{transport_id}: DdsEnvelope key={}, data_len={}",
+                    dds_env.topic,
+                    dds_env.data.len()
                 );
 
-                for (i, sample) in samples.iter().enumerate() {
-                    log_debug!(
-                        "{transport_id}: sample {i}: data.is_some()={}",
-                        sample.data.is_some()
-                    );
-
-                    if let Some(dds_env) = &sample.data {
-                        log_debug!(
-                            "{transport_id}: DdsEnvelope key={}, data_len={}",
-                            dds_env.topic,
-                            dds_env.data.len()
-                        );
-
-                        match serde_json::from_slice::<Envelope>(&dds_env.data) {
-                            Ok(env) => {
-                                log_info!("{transport_id}: successfully deserialized envelope");
-                                handle_incoming(
-                                    &transport_id,
-                                    &topic,
-                                    Arc::clone(&subscribers),
-                                    env,
-                                )
-                                .await;
-                            }
-                            Err(e) => {
-                                log_error!("{transport_id}: deserialization error: {e:?}",);
-                            }
-                        }
+                match serde_json::from_slice::<Envelope>(&dds_env.data) {
+                    Ok(env) => {
+                        log_info!("{transport_id}: successfully deserialized envelope");
+                        handle_incoming(transport_id, topic, Arc::clone(subscribers), env).await;
+                    }
+                    Err(e) => {
+                        log_error!("{transport_id}: deserialization error: {e:?}",);
                     }
                 }
             }
-            Err(e) => {
-                // Keep your existing "NoData" spam suppression behavior.
-                let e_str = format!("{:?}", e);
-                if !e_str.contains("NoData") {
-                    log_debug!("{transport_id}: take error on topic {topic}: {e:?}");
-                }
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            }
         }
     }
+
+    Ok(())
 }
 
 /// Fans out an incoming envelope to all local subscribers for the topic.
@@ -622,7 +674,7 @@ fn build_rpc_writer_qos() -> DataWriterQos {
     DataWriterQos {
         reliability: ReliabilityQosPolicy {
             kind: ReliabilityQosPolicyKind::Reliable,
-            max_blocking_time: DurationKind::Finite(Duration::new(0, 0)),
+            max_blocking_time: DurationKind::Finite(DdsDuration::new(0, 0)),
         },
         history: HistoryQosPolicy {
             kind: HistoryQosPolicyKind::KeepLast(1),
@@ -641,7 +693,7 @@ fn build_rpc_reader_qos() -> DataReaderQos {
     DataReaderQos {
         reliability: ReliabilityQosPolicy {
             kind: ReliabilityQosPolicyKind::Reliable,
-            max_blocking_time: DurationKind::Finite(Duration::new(0, 0)),
+            max_blocking_time: DurationKind::Finite(DdsDuration::new(0, 0)),
         },
         history: HistoryQosPolicy {
             kind: HistoryQosPolicyKind::KeepLast(1),

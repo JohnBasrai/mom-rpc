@@ -67,6 +67,16 @@
 //! - `sensor_server.rs` - MQTT/AMQP server example
 //! - `sensor_client.rs` - MQTT/AMQP client example
 
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn
+    )
+)]
+
 // Import all sub modules once...
 mod client;
 mod domain;
@@ -176,3 +186,10 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     )))]
     create_memory_transport(config).await
 }
+
+// src/lib.rs
+// ---
+// Internal infrastructure
+
+mod macros;
+pub(crate) use macros::{log_debug, log_error, log_info, log_warn};

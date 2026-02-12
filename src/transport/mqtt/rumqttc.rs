@@ -77,6 +77,9 @@ use tokio::task::JoinHandle;
 
 use crate::{
     //
+    log_debug,
+    log_error,
+    log_info,
     Envelope,
     Result,
     RpcConfig,
@@ -88,33 +91,6 @@ use crate::{
 };
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
-
-//
-// Logging macros (transport-local for now; intended to be shared later)
-//
-
-macro_rules! log_debug {
-    ($($arg:tt)*) => {
-        #[cfg(feature = "logging")]
-        log::debug!($($arg)*);
-    };
-}
-
-macro_rules! log_info {
-    ($($arg:tt)*) => {
-        #[cfg(feature = "logging")]
-        log::info!($($arg)*);
-    };
-}
-
-macro_rules! log_error {
-    ($($arg:tt)*) => {
-        #[cfg(feature = "logging")]
-        log::error!($($arg)*);
-        #[cfg(not(feature = "logging"))]
-        eprintln!($($arg)*);
-    };
-}
 
 type SubscriberMap = Arc<RwLock<HashMap<String, Vec<mpsc::Sender<Envelope>>>>>;
 type TaskList = Arc<RwLock<Vec<JoinHandle<()>>>>;

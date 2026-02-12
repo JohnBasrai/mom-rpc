@@ -1,6 +1,15 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn
+)]
+
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::task::JoinHandle;
+
+use tracing::info;
 
 use mom_rpc::{
     //
@@ -12,13 +21,6 @@ use mom_rpc::{
     RpcServer,
     TransportPtr,
 };
-
-macro_rules! log_info {
-    ($($arg:tt)*) => {
-        #[cfg(feature = "logging")]
-        log::info!($($arg)*);
-    };
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AddRequest {
@@ -93,26 +95,25 @@ impl MathServer {
 #[tokio::test]
 async fn test_basic_request() -> Result<()> {
     // ---
-    #[cfg(feature = "logging")]
-    init_logging();
+    init_tracing();
 
-    log_info!("Starting basic request test");
+    info!("Starting basic request test");
 
     let server = MathServer::new("test_basic_request").await?;
-    log_info!("after MathServer::new");
+    info!("after MathServer::new");
 
     let client = RpcClient::with_transport(server.transport(), "Sally").await?;
-    log_info!("after RpcClient::new");
+    info!("after RpcClient::new");
 
-    log_info!("sending math add 2 3...");
+    info!("sending math add 2 3...");
     let resp: AddResponse = client
         .request_to(server.node_id(), "add", AddRequest { a: 2, b: 3 })
         .await?;
-    log_info!("sending math add 2 3...done");
+    info!("sending math add 2 3...done");
 
     assert_eq!(resp.sum, 5);
 
-    log_info!("calling server shutdown");
+    info!("calling server shutdown");
 
     server.shutdown().await?;
     Ok(())
@@ -121,8 +122,7 @@ async fn test_basic_request() -> Result<()> {
 #[tokio::test]
 async fn test_concurrent_requests() {
     // ---
-    #[cfg(feature = "logging")]
-    init_logging();
+    init_tracing();
 
     let server = MathServer::new("test_concurrent_requests").await.unwrap();
     let client = RpcClient::with_transport(server.transport(), "George")
@@ -156,8 +156,7 @@ async fn test_concurrent_requests() {
 #[tokio::test]
 async fn test_timeout() -> Result<()> {
     // ---
-    #[cfg(feature = "logging")]
-    init_logging();
+    init_tracing();
 
     let config = RpcConfig::memory("test_timeout");
     let transport = create_memory_transport(&config).await?;
@@ -175,7 +174,7 @@ async fn test_timeout() -> Result<()> {
 
     let client = RpcClient::with_transport(transport.clone(), "Denis").await?;
 
-    log_info!("test_timeout: sending 1 + 1");
+    info!("test_timeout: sending 1 + 1");
 
     let fut =
         client.request_to::<AddRequest, AddResponse>("lazy-math", "add", AddRequest { a: 1, b: 1 });
@@ -184,15 +183,15 @@ async fn test_timeout() -> Result<()> {
 
     assert!(res.is_err(), "request unexpectedly completed");
 
-    log_info!("test_timeout: {:?}", res);
+    info!("test_timeout: {:?}", res);
 
-    log_info!("test_timeout: shutting down server");
+    info!("test_timeout: shutting down server");
     server.shutdown().await?;
 
-    log_info!("test_timeout: closing transport");
+    info!("test_timeout: closing transport");
     transport.close().await?;
 
-    log_info!("test_timeout: join handler");
+    info!("test_timeout: join handler");
     handle.await.expect("test_timeout:: server task panicked")?;
 
     Ok(())
@@ -201,8 +200,8 @@ async fn test_timeout() -> Result<()> {
 #[tokio::test]
 #[ignore] // TODO: Implement error response protocol
 async fn test_error_response() -> Result<()> {
-    #[cfg(feature = "logging")]
-    init_logging();
+    // --
+    init_tracing();
 
     let config = RpcConfig::memory("test_error");
     let transport = create_memory_transport(&config).await?;
@@ -240,8 +239,8 @@ async fn test_error_response() -> Result<()> {
 
 #[tokio::test]
 async fn test_multiple_clients() -> Result<()> {
-    #[cfg(feature = "logging")]
-    init_logging();
+    // ---
+    init_tracing();
 
     let config = RpcConfig::memory("test_multi_client");
     let transport = create_memory_transport(&config).await?;
@@ -291,8 +290,8 @@ async fn test_multiple_clients() -> Result<()> {
 #[tokio::test]
 #[ignore] // TODO: Implement error response protocol
 async fn test_transport_disconnect() -> Result<()> {
-    #[cfg(feature = "logging")]
-    init_logging();
+    // ---
+    init_tracing();
 
     let config = RpcConfig::memory("test_disconnect");
     let transport = create_memory_transport(&config).await?;
@@ -330,9 +329,6 @@ async fn test_transport_disconnect() -> Result<()> {
 
 #[tokio::test]
 async fn test_request_with_timeout_success() -> Result<()> {
-    #[cfg(feature = "logging")]
-    init_logging();
-
     let config = RpcConfig::memory("test_timeout_success");
     let transport = create_memory_transport(&config).await?;
     let server = RpcServer::with_transport(transport.clone(), "timeout-math");
@@ -367,9 +363,6 @@ async fn test_request_with_timeout_success() -> Result<()> {
 
 #[tokio::test]
 async fn test_request_with_timeout_expires() -> Result<()> {
-    #[cfg(feature = "logging")]
-    init_logging();
-
     let config = RpcConfig::memory("test_timeout_expires");
     let transport = create_memory_transport(&config).await.unwrap();
     let server = RpcServer::with_transport(transport.clone(), "slow-math");
@@ -453,25 +446,16 @@ async fn test_run_blocks_until_shutdown() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "logging")]
-mod imp {
-    use std::sync::Once;
+use std::sync::Once;
 
-    static INIT: Once = Once::new();
+static INIT: Once = Once::new();
 
-    pub fn init() {
-        INIT.call_once(|| {
-            let _ = env_logger::builder().is_test(true).try_init();
-        });
-    }
-}
-
-#[cfg(not(feature = "logging"))]
-mod imp {
-    #[inline]
-    pub fn init() {}
-}
-
-pub fn init_logging() {
-    imp::init();
+fn init_tracing() {
+    // ---
+    INIT.call_once(|| {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_line_number(true)
+            .try_init();
+    });
 }

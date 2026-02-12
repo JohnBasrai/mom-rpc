@@ -1,5 +1,12 @@
 // tests/transport_memory.rs
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn
+)]
+
 use bytes::Bytes;
 use tokio::time::{timeout, Duration};
 
