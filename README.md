@@ -197,7 +197,7 @@ let resp: SensorReading = client
 <summary><b>View complete server with broker example</b></summary>
 
 ```rust
-use mom_rpc::{create_transport, RpcConfig, RpcServer};
+use mom_rpc::{create_transport, Result, RpcConfig, RpcServer};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -210,7 +210,7 @@ enum TemperatureUnit { Celsius, Fahrenheit }
 struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
 
     env_logger::init();
 
@@ -228,18 +228,23 @@ async fn main() -> anyhow::Result<()> {
             TemperatureUnit::Celsius => (celsius, "C"),
             TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
         };
-        Ok(SensorReading { value, unit: unit.to_string(), timestamp_ms: 0 })
+        Ok(SensorReading {
+            value,
+            unit: unit.to_string(),
+            timestamp_ms: 0,
+        })
     });
 
     let server_clone = server.clone();
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl+C");
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to listen for Ctrl+C");
         server_clone.shutdown().await.expect("shutdown failed");
     });
 
     server.run().await?;
-    transport.close().await?;
-    Ok(())
+    transport.close().await
 }
 ```
 
@@ -249,7 +254,7 @@ async fn main() -> anyhow::Result<()> {
 <summary><b>View complete client with broker example</b></summary>
 
 ```rust
-use mom_rpc::{create_transport, RpcClient, RpcConfig};
+use mom_rpc::{create_transport, Result, RpcClient, RpcConfig};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -262,7 +267,7 @@ enum TemperatureUnit { Celsius, Fahrenheit }
 struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
 
     env_logger::init();
 
@@ -283,8 +288,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     println!("Temperature: {} {} @ {}", resp.value, resp.unit, resp.timestamp_ms);
-    transport.close().await?;
-    Ok(())
+    transport.close().await
 }
 ```
 
@@ -367,6 +371,7 @@ Additional transports may be added in the future behind feature flags.
 |:---------------------|:--------------------------|:---------------|
 | `transport_rumqttc`  | MQTT via rumqttc          | ❌ No          |
 | `transport_lapin`    | AMQP via lapin (RabbitMQ) | ❌ No          |
+| `transport_dust_dds` | DDS via (dust_dds)        | ❌ No          |
 | `logging`            | Enable logging output     | ✅ Yes         |
 
 👉 The **memory transport is always available** - no feature flag required.

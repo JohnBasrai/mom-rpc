@@ -9,6 +9,7 @@
 //! - **Memory** (default) - In-process testing transport, always available
 //! - **MQTT via rumqttc** - Recommended MQTT backend (enable `transport_rumqttc`)
 //! - **AMQP via lapin**   - RabbitMQ and AMQP 0-9-1 brokers (enable `transport_lapin`)
+//! - **DDS via dust_dds** - Brokerless peer-to-peer transport (enable `transport_dust_dds`)
 //!
 //! # Quick Start
 //!
@@ -66,6 +67,16 @@
 //! - `sensor_server.rs` - MQTT/AMQP server example
 //! - `sensor_client.rs` - MQTT/AMQP client example
 
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn
+    )
+)]
+
 // Import all sub modules once...
 mod client;
 mod domain;
@@ -98,6 +109,9 @@ pub use transport::create_rumqttc_transport;
 #[cfg(feature = "transport_lapin")]
 pub use transport::create_lapin_transport;
 
+#[cfg(feature = "transport_dust_dds")]
+pub use transport::create_dust_dds_transport;
+
 // --- public re-exports
 pub use domain::{
     //
@@ -114,9 +128,10 @@ pub use domain::{
 /// This is the primary transport factory function. It selects the appropriate
 /// transport implementation based on feature flags with the following priority:
 ///
-/// 1. `transport_rumqttc` - MQTT via rumqttc (recommended)
-/// 2. `transport_lapin` - AMQP via lapin
-/// 3. Default - In-memory transport
+/// 1. `transport_rumqttc`  - MQTT via rumqttc (recommended)
+/// 2. `transport_lapin`    - AMQP via lapin
+/// 3. `transport_dust_dds` - DDS via dust_dds
+/// 4. Default - In-memory transport
 ///
 /// If multiple transport features are enabled, rumqttc takes precedence over lapin.
 ///
@@ -150,13 +165,31 @@ pub use domain::{
 /// - Transport initialization fails
 pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
+
     #[cfg(feature = "transport_rumqttc")]
     return create_rumqttc_transport(config).await;
 
     #[cfg(all(feature = "transport_lapin", not(feature = "transport_rumqttc")))]
     return create_lapin_transport(config).await;
 
+    #[cfg(all(
+        feature = "transport_dust_dds",
+        not(any(feature = "transport_rumqttc", feature = "transport_lapin"))
+    ))]
+    return create_dust_dds_transport(config).await;
+
     // Fallback / default
-    #[cfg(not(any(feature = "transport_rumqttc", feature = "transport_lapin")))]
+    #[cfg(not(any(
+        feature = "transport_rumqttc",
+        feature = "transport_lapin",
+        feature = "transport_dust_dds"
+    )))]
     create_memory_transport(config).await
 }
+
+// src/lib.rs
+// ---
+// Internal infrastructure
+
+mod macros;
+pub(crate) use macros::{log_debug, log_error, log_info, log_warn};

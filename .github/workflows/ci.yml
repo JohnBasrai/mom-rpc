@@ -61,9 +61,10 @@ jobs:
       matrix:
         feature:
           - default
-          - transport_rumqttc
-          - transport_lapin
           - no-default-features
+          - transport_dust_dds
+          - transport_lapin
+          - transport_rumqttc
           - all-features
 
     steps:

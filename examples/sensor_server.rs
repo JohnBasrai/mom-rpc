@@ -7,15 +7,28 @@
 //! Requires:
 //! - An MQTT broker running on localhost:1883
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn
+)]
+
 mod common;
 
 use common::{ReadHumidity, ReadPressure, ReadTemperature, SensorReading, TemperatureUnit};
 use mom_rpc::{create_transport, Result, RpcConfig, RpcServer};
+use tracing_subscriber::{fmt as tracing_format, EnvFilter};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // ---
-    env_logger::init();
+    tracing_format()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_target(true)
+        .with_line_number(true)
+        .with_ansi(false)
+        .init();
 
     let broker_uri =
         std::env::var("BROKER_URI").unwrap_or_else(|_| "mqtt://localhost:1883".to_string());

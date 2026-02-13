@@ -5,7 +5,50 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
-## [0.6.3] - 2026-02-10
+
+## [0.7.0] - 2026-02-13
+
+### Added
+
+- **DDS transport support** via `dust_dds` library (#38)
+  - Brokerless peer-to-peer communication using RTPS protocol
+  - WaitSet-based discovery synchronization to prevent timing races
+  - Actor-based concurrency model with async API integration
+  - Enable with `features = ["transport_dust_dds"]`
+- `wait_for_matched_reader()` - discovery synchronization using `StatusCondition` and `WaitSetAsync`
+- Manual integration test script: `scripts/manual-tests/dds.sh`
+
+### Changed
+
+- **Breaking**: Migrated from `log` to `tracing` for diagnostic output
+  - Users should update to `tracing-subscriber` instead of `env_logger`, see examples
+  - Logging macros refactored to crate-level (lib.rs)
+  - Stderr fallback for error logging when logging feature is disabled
+- **Dependencies**: Added `dust_dds = "0.14"` for DDS transport implementation
+- **Dependencies**: Replaced `log` with `tracing` for logging
+
+### Internal
+
+- Enforce clippy `no-unwrap` and `no-panic` rules in production code
+- Improved error handling: removed infallible conversions, eliminated `expect()`/`panic()` usage
+- DDS `DdsEnvelope` conversions changed from `From` to `TryFrom` for proper error handling
+
+### Documentation
+
+- Added `transport/dds/README.md` with library selection rationale and technical implementation notes
+- Updated `scripts/manual-tests/README.md` with DDS testing instructions
+
+### Known Limitations
+
+- DDS transport is functional but not stress-tested for concurrent clients or high-burst scenarios
+- See [GitHub issue #40] for production hardening roadmap
+
+## [0.6.3] - unreleased
+
+### Added
+
+- Dual-license crate under MIT OR Apache-2.0
+- Readme: Client & Server examples changed to return mpm_Rpc::Error instead of anyhow::Error
 
 ### Fixed
 

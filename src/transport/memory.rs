@@ -32,6 +32,10 @@ use tokio::sync::{mpsc, RwLock};
 #[allow(unused_imports)]
 use crate::{
     // ---
+    log_debug,
+    log_error,
+    log_info,
+    log_warn,
     Address,
     Envelope,
     Result,
@@ -86,8 +90,7 @@ impl Transport for MemoryTransport {
 
         for (sub, senders) in subs.iter() {
             if sub.0 == env.address.0 {
-                #[cfg(feature = "logging")]
-                log::debug!("{}: publish to {:?}", self.transport_id(), sub);
+                log_debug!("{}: publish to {sub:?}", self.transport_id());
 
                 for sender in senders {
                     // Ignore send failures; a closed channel indicates
@@ -95,8 +98,7 @@ impl Transport for MemoryTransport {
                     match sender.send(env.clone()).await {
                         Ok(_) => {}
                         Err(_err) => {
-                            #[cfg(feature = "logging")]
-                            log::info!("publish error {_err:?}");
+                            log_info!("publish error {_err:?}");
                         }
                     }
                 }
@@ -114,8 +116,7 @@ impl Transport for MemoryTransport {
     async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
         // ---
 
-        #[cfg(feature = "logging")]
-        log::debug!("{}: subscribe to {:?}", self.transport_id(), sub);
+        log_debug!("{}: subscribe to {sub:?}", self.transport_id());
 
         let (tx, rx) = mpsc::channel(16);
 
@@ -131,8 +132,7 @@ impl Transport for MemoryTransport {
     async fn close(&self) -> Result<()> {
         // ---
 
-        #[cfg(feature = "logging")]
-        log::debug!("{}: closing transport...", self.transport_id());
+        log_debug!("{}: closing transport...", self.transport_id());
 
         let mut subs = self.subscriptions.write().await;
         subs.clear();
@@ -146,8 +146,7 @@ impl Transport for MemoryTransport {
 pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
     let transport_id = config.transport_id.clone();
-    #[cfg(feature = "logging")]
-    log::debug!("{transport_id}: create memory transport");
+    log_debug!("{transport_id}: create memory transport");
 
     let transport = MemoryTransport {
         // ---

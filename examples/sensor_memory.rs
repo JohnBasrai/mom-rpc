@@ -5,15 +5,28 @@
 //!
 //! Run with: cargo run --example sensor_memory
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn
+)]
+
 mod common;
 
 use common::{ReadHumidity, ReadPressure, ReadTemperature, SensorReading, TemperatureUnit};
 use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // ---
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_target(true)
+        .with_line_number(true)
+        .with_ansi(false)
+        .init();
 
     let config = RpcConfig::memory("sensor");
     let transport = create_transport(&config).await?;

@@ -12,11 +12,17 @@ mod common;
 
 use common::{ReadHumidity, ReadPressure, ReadTemperature, SensorReading, TemperatureUnit};
 use mom_rpc::{create_transport, Result, RpcClient, RpcConfig};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // ---
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_target(true)
+        .with_ansi(false)
+        .with_line_number(true)
+        .init();
 
     let broker_uri =
         std::env::var("BROKER_URI").unwrap_or_else(|_| "mqtt://localhost:1883".to_string());

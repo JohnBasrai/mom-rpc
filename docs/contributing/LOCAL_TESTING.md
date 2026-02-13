@@ -36,6 +36,9 @@ To test a specific feature combination:
 # Test with rumqttc
 CI_FEATURE=transport_rumqttc ./scripts/ci-test.sh
 
+# Test with dust_ddc
+CI_FEATURE=transport_dustddc ./scripts/ci-test.sh
+
 # Test without default features
 CI_FEATURE=no-default-features ./scripts/ci-test.sh
 
