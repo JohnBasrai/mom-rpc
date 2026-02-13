@@ -365,14 +365,14 @@ Additional transports may be added in the future behind feature flags.
 
 ---
 
-## Feature flags
+## Feature flags (Not a complete list)
 
 | Flag                 | Description               | Default Enable |
 |:---------------------|:--------------------------|:---------------|
-| `transport_rumqttc`  | MQTT via rumqttc          | ❌ No          |
-| `transport_lapin`    | AMQP via lapin (RabbitMQ) | ❌ No          |
-| `transport_dust_dds` | DDS via (dust_dds)        | ❌ No          |
-| `logging`            | Enable logging output     | ✅ Yes         |
+| `transport_rumqttc`  | MQTT via rumqttc          | No             |
+| `transport_lapin`    | AMQP via lapin (RabbitMQ) | No             |
+| `transport_dust_dds` | DDS via (dust_dds)        | No             |
+| `logging`            | Enable logging output     | Yes            |
 
 👉 The **memory transport is always available** - no feature flag required.
 

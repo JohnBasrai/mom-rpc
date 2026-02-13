@@ -126,12 +126,6 @@ transport/
     └── dust_dds.rs       # Future: DDS via dust_dds
 ```
 
-Feature names follow the **library** convention:
-- `transport_rumqttc` (MQTT via rumqttc)
-- `transport_lapin` (AMQP via lapin)
-- `transport_paho` (future: MQTT via paho)
-- `transport_rdkafka` (future: Kafka via rdkafka)
-
 This allows multiple implementations per protocol while keeping feature names specific and unambiguous.
 
 ---

@@ -56,9 +56,12 @@
 //!
 //! # Feature Flags
 //!
-//! - `transport_rumqttc` - MQTT via rumqttc (recommended for production)
-//! - `transport_lapin` - AMQP via lapin (for RabbitMQ and AMQP 0-9-1 brokers)
-//! - `logging` - Enable log output (enabled by default)
+//! |  Flag                | Description                       |
+//! |----------------------|-----------------------------------|
+//! | `transport_rumqttc`  | MQTT via rumqttc (recommended for production) |
+//! | `transport_lapin`    | AMQP via lapin (for RabbitMQ and AMQP 0-9-1 brokers) |
+//! | `transport_dust-dds` | Brokerless peer-to-peer transport |
+//! | `logging`            | Enable log output (enabled by default) |
 //!
 //! # Examples
 //!
