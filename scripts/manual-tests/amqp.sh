@@ -14,6 +14,7 @@ CONTAINER_NAME="mom-rpc-test-rabbitmq"
 AMQP_PORT=5672
 MGMT_PORT=15672
 BROKER_URI="amqp://localhost:${AMQP_PORT}/%2f"
+: ${FEATURE:=transport_lapin}
 
 # ---
 

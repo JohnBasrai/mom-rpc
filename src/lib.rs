@@ -6,11 +6,21 @@
 //!
 //! # Supported Transports
 //!
-//! - **Memory** (default) - In-process testing transport, always available
-//! - **MQTT via rumqttc** - Recommended MQTT backend (enable `transport_rumqttc`)
-//! - **AMQP via lapin**   - RabbitMQ and AMQP 0-9-1 brokers (enable `transport_lapin`)
-//! - **DDS via dust_dds** - Brokerless peer-to-peer transport (enable `transport_dust_dds`)
+//! | Transport Name       | Description                       | Enable Flag          |
+//! |:---------------------|:----------------------------------|:---------------------|
+//! | **Memory** (default) | In-process testing transport      | **N/A** (always on)  |
+//! |                      |                                   |                      |
+//! | **AMQP via lapin**   | RabbitMQ and AMQP 0-9-1 brokers   | `transport_lapin`    |
+//! | **DDS via dust_dds** | Brokerless peer-to-peer transport | `transport_dust_dds` |
+//! | **MQTT via rumqttc** | MQTT broker-based transport       | `transport_rumqttc`  |
 //!
+//! **Note:** The `logging` feature (enabled by default) provides diagnostic output via `tracing`.
+//! To disable logging, use `default-features = false` in your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! mom-rpc = { version = "0.7", default-features = false, features = ["transport_rumqttc"] }
+//! ```
 //! # Quick Start
 //!
 //! ```no_run
@@ -54,12 +64,6 @@
 //! }
 //! ```
 //!
-//! # Feature Flags
-//!
-//! - `transport_rumqttc` - MQTT via rumqttc (recommended for production)
-//! - `transport_lapin` - AMQP via lapin (for RabbitMQ and AMQP 0-9-1 brokers)
-//! - `logging` - Enable log output (enabled by default)
-//!
 //! # Examples
 //!
 //! See the `examples/` directory for complete working examples:
@@ -97,20 +101,23 @@ pub use rpc_config::RpcConfig;
 pub use correlation::CorrelationId;
 pub use error::{Result, RpcError};
 
-/// Create a new in-memory transport.
+/// Create an in-memory transport.
 ///
 /// This transport is always available (not feature-gated) and requires no
 /// external resources.
 pub use transport::create_memory_transport;
 
+#[doc(hidden)]
 #[cfg(feature = "transport_rumqttc")]
 pub use transport::create_rumqttc_transport;
 
+#[doc(hidden)]
 #[cfg(feature = "transport_lapin")]
-pub use transport::create_lapin_transport;
+use transport::create_lapin_transport;
 
+#[doc(hidden)]
 #[cfg(feature = "transport_dust_dds")]
-pub use transport::create_dust_dds_transport;
+use transport::create_dust_dds_transport;
 
 // --- public re-exports
 pub use domain::{
@@ -123,17 +130,18 @@ pub use domain::{
     TransportPtr,
 };
 
-/// Creates a transport based on the provided configuration and enabled features.
+/// Create a transport based on the provided configuration and enabled features.
 ///
-/// This is the primary transport factory function. It selects the appropriate
-/// transport implementation based on feature flags with the following priority:
+/// **Best for:** Applications with a single transport feature enabled.
 ///
-/// 1. `transport_rumqttc`  - MQTT via rumqttc (recommended)
-/// 2. `transport_lapin`    - AMQP via lapin
-/// 3. `transport_dust_dds` - DDS via dust_dds
-/// 4. Default - In-memory transport
+/// When multiple transport features are enabled, auto-selects based on priority:
+/// 1. `transport_dust_dds` - DDS via dust_dds
+/// 2. `transport_rumqttc`  - MQTT via rumqttc
+/// 3. `transport_lapin`    - AMQP via lapin
+/// 4. `memory` (always available)
 ///
-/// If multiple transport features are enabled, rumqttc takes precedence over lapin.
+/// **For multi-transport applications:** Use `create_transport_for()` to explicitly
+/// select the transport at runtime instead of relying on this priority order.
 ///
 /// # Examples
 ///
@@ -145,15 +153,15 @@ pub use domain::{
 ///     // Memory transport (default, no features needed)
 ///     let config = RpcConfig::memory("my-app");
 ///     let transport = create_transport(&config).await?;
-///     
+///
 ///     // MQTT transport (requires transport_rumqttc feature)
 ///     let config = RpcConfig::with_broker("mqtt://localhost:1883", "my-app");
 ///     let transport = create_transport(&config).await?;
-///     
+///
 ///     // AMQP transport (requires transport_lapin feature)
 ///     let config = RpcConfig::with_broker("amqp://localhost:5672/%2f", "my-app");
 ///     let transport = create_transport(&config).await?;
-///     
+///
 ///     Ok(())
 /// }
 /// ```
@@ -185,6 +193,68 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
         feature = "transport_dust_dds"
     )))]
     create_memory_transport(config).await
+}
+
+/// Creates a transport based on a runtime string flag.
+///
+/// Allows applications to select between multiple compiled transports at runtime.
+/// The transport must be enabled via feature flags at compile time.
+///
+/// # Arguments
+/// * `flag`   - Transport name: "memory", "dust-dds", "rumqttc", or "lapin"
+/// * `config` - Transport configuration
+///
+/// # Errors
+/// Returns `RpcError::Transport` if the specified transport is not enabled via features
+/// or if the transport name is unrecognized.
+///
+/// # Examples
+///
+/// ```no_run
+/// use mom_rpc::{create_transport_for, RpcConfig, Result};
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     // Build config normally
+///     let config = RpcConfig::with_broker("mqtt://localhost:1883", "my-app");
+///
+///     // Explicit runtime selection (requires feature enabled)
+///     let transport = create_transport_for("rumqttc", &config).await?;
+///
+///     Ok(())
+/// }
+/// ```
+pub async fn create_transport_for(flag: &str, config: &RpcConfig) -> Result<TransportPtr> {
+    // ---
+    let _not_enabled = format!("transport_{flag} feature not enabled");
+
+    match flag {
+        "dust-dds" => {
+            #[cfg(feature = "transport_dust_dds")]
+            return create_dust_dds_transport(config).await;
+
+            #[cfg(not(feature = "transport_dust_dds"))]
+            return Err(RpcError::Transport(_not_enabled));
+        }
+        "rumqttc" => {
+            #[cfg(feature = "transport_rumqttc")]
+            return create_rumqttc_transport(config).await;
+
+            #[cfg(not(feature = "transport_rumqttc"))]
+            return Err(RpcError::Transport(_not_enabled));
+        }
+        "lapin" => {
+            #[cfg(feature = "transport_lapin")]
+            return create_lapin_transport(config).await;
+
+            #[cfg(not(feature = "transport_lapin"))]
+            return Err(RpcError::Transport(_not_enabled));
+        }
+        "memory" => create_memory_transport(config).await,
+        _ => Err(RpcError::Transport(format!(
+            "unrecognized transport: {flag}, valid values: memory, dust-dds, rumqttc, lapin"
+        ))),
+    }
 }
 
 // src/lib.rs

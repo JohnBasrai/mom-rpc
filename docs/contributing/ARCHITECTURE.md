@@ -56,7 +56,7 @@ Transports are organized by **protocol → library** hierarchy:
 **Why this structure?**
 - Allows multiple implementations per protocol
 - Clear separation between protocols
-- Feature names follow library convention (`transport_rumqttc`, `transport_lapin`)
+- Feature names follow library convention (`transport_rumqttc`, `transport_lapin` ⋯ )
 - EMBP maintained at protocol level
 
 ## Import Guidelines
@@ -172,9 +172,9 @@ pub use kafka::create_rdkafka_transport;
 ```
 
 6. Update lib.rs `src/lib.rs`
-   - Add re-export for the new transport following the pattern of existing transports (e.g., transport_lapin)
+   - Add re-export for the new transport following the pattern of existing transports
    - Update `create_transport()` function with feature guard
-   - Update doc comments following the pattern of existing transports (e.g., `transport_lapin`) 
+   - Update doc comments following the pattern of existing transports
 
 The code below demonstrates the feature guard pattern for `create_transport()`:
 
@@ -246,13 +246,14 @@ If a protocol directory already exists (e.g., `mqtt/`), just add the new library
 
 Features are named after the **library**, not the protocol:
 
-| Feature name         | Rationale         |
-|:---------------------|:------------------|
-| `transport_rumqttc`  | ✅ (library name) |
-| `transport_lapin`    | ✅ (library name) |
-| `transport_paho`     | ✅ (library name) |
-| `transport_mqtt`     | ❌ (too generic)  |
-| `transport_amqp`     | ❌ (too generic)  |
+| Feature name         | Rationale         | Rust Crate |
+|:---------------------|:------------------|------------|
+| `transport_rumqttc`  | ✅ (library name) | rumqttc    |
+| `transport_dust_dds` | ✅ (library name) | dust_dds   |
+| `transport_lapin`    | ✅ (library name) | lapin      |
+| `transport_paho`     | ✅ (library name) | paho       |
+| `transport_mqtt`     | ❌ (too generic)  | N/A        |
+| `transport_amqp`     | ❌ (too generic)  | N/A        |
 
 Note: Protocol is not needed in the feature name because crates.io will enforce uniqueness of library names.
 This allows multiple implementations per protocol without naming conflicts.

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
+## [0.7.1] - 2026-02-13
+
+### Added
+- `create_transport_for()` for runtime transport selection
+
+### Changed
+- **Breaking (minor):** Made transport-specific creation functions (`create_rumqttc_transport`,
+  `create_lapin_transport`, `create_dust_dds_transport`) private. These were never part of the
+  documented API. Use `create_transport_for()` instead for explicit transport selection.
+- Minor API doc clarifications
+
+  Migration: `create_rumqttc_transport(&config)` → `create_transport_for("rumqttc", &config)`
 
 ## [0.7.0] - 2026-02-13
 
