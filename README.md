@@ -164,7 +164,7 @@ For distributed deployments with an MQTT broker:
 **Cargo.toml:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.x", features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.7", features = ["transport_rumqttc"] }
 ```
 
 **Basic broker usage:**
@@ -322,13 +322,17 @@ env_logger::builder()
     .init();
 ```
 
-**Note:** Running with `RUST_LOG=debug` will produce verbose output. This is useful for troubleshooting but not recommended for production.
+**Note:** Running with `RUST_LOG=mom_rpc=debug` will produce verbose output. This is useful for troubleshooting but not recommended for production.
 
-**To disable logging entirely**, omit the feature:
+If you also adjust logging level of the transport libary you can add it to the list:  "`RUST_LOG=mom_rpc=debug,dust_dds=warn`"
+
+
+**To disable logging entirely**:
 ```toml
 [dependencies]
-mom-rpc = { version = "0.x", default-features = false, features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.7", default-features = false, features = ["transport_rumqttc"] }
 ```
+
 ---
 
 ## Transports
@@ -349,7 +353,7 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
 
 ### Available brokered transports
 
-* **rumqttc (MQTT)** — 🌟 **Recommended MQTT backend**
+* **rumqttc (MQTT)** — 🌟 **MQTT broker-based transport**
 
   Enable via the `transport_rumqttc` feature. This implementation provides:
   - Actor-based architecture with safe concurrency
@@ -358,20 +362,20 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
   - Active maintenance and modern async patterns
 
   ```toml
-  mom-rpc = { version = "0.x", features = ["transport_rumqttc"] }
+  mom-rpc = { version = "0.7", features = ["transport_rumqttc"] }
   ```
 
 Additional transports may be added in the future behind feature flags.
 
 ---
 
-## Feature flags (Not a complete list)
+## Supported Transports
 
 | Flag                 | Description               | Default Enable |
 |:---------------------|:--------------------------|:---------------|
-| `transport_rumqttc`  | MQTT via rumqttc          | No             |
-| `transport_lapin`    | AMQP via lapin (RabbitMQ) | No             |
 | `transport_dust_dds` | DDS via (dust_dds)        | No             |
+| `transport_lapin`    | AMQP via lapin (RabbitMQ) | No             |
+| `transport_rumqttc`  | MQTT via rumqttc          | No             |
 | `logging`            | Enable logging output     | Yes            |
 
 👉 The **memory transport is always available** - no feature flag required.
@@ -381,13 +385,13 @@ Additional transports may be added in the future behind feature flags.
 **For production MQTT deployments:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.x", features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.7", features = ["transport_rumqttc"] }
 ```
 
 **For testing without a broker:**
 ```toml
 [dependencies]
-mom-rpc = "0.x"  # Memory transport included by default
+mom-rpc = "0.7"  # Memory transport included by default
 ```
 
 ---

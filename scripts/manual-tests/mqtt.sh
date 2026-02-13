@@ -13,7 +13,7 @@ FEATURE="${1:-}"
 CONTAINER_NAME="mom-rpc-test-mosquitto"
 MQTT_PORT=1883
 BROKER_URI="mqtt://localhost:${MQTT_PORT}"
-
+: ${FEATURE:=transport_rumqttc}
 # ---
 
 usage() {

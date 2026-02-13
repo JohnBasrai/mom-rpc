@@ -42,13 +42,14 @@ The architecture follows an **Explicit Module Boundary Pattern (EMBP)** througho
    │  - Addressing               │
    └───────────────▲─────────────┘
                    │
-   ┌───────────────┴───────────────┐
-   │     Concrete Transports       │
-   │  - memory (reference)         │
-   │  - MQTT (rumqttc, implemented)│
-   │  - AMQP (lapin, implemented)  │
-   │  - (future: Kafka, NATS, etc.)│
-   └───────────────────────────────┘
+   ┌───────────────┴────────────────┐
+   │     Concrete Transports        │
+   │  -  memory (reference)         │
+   │  -  MQTT   (rumqttc)           │
+   │  -  AMQP   (lapin)             │
+   │  -  DDS    (dust_dds)          │
+   │  - (future: Kafka, NATS, etc.) │
+   └────────────────────────────────┘
 ```
 
 ---
@@ -228,6 +229,49 @@ This preserves safety while keeping the public `Transport` trait `Send + Sync`.
 * Delivery is best-effort and non-durable
 * Messages are acknowledged after successful deserialization
 * Each subscription registers a new local inbox; multiple subscribers per queue are supported
+
+</details>
+
+<details>
+<summary><strong>Dust_dds Transport (DDS)</strong></summary>
+
+The `dust_dds` transport provides DDS/RTPS support for brokerless peer-to-peer communication.
+
+### Concurrency model
+
+* A single background actor owns the DDS `DomainParticipant`, `DataWriter`, and `DataReader` instances
+* All interaction with the DDS entities is serialized through the actor
+* No other task touches DDS entities directly
+
+This preserves safety while keeping the public `Transport` trait `Send + Sync`.
+
+### Connection behavior
+
+* DDS is brokerless - no external broker required
+* Peers discover each other automatically via RTPS multicast
+* `DomainParticipant` joins the domain at creation time
+* Discovery typically completes in 30-50ms on loopback networks
+
+### Discovery and synchronization
+
+* Uses `WaitSetAsync` with `StatusCondition` to ensure messages aren't lost due to timing races
+* Writers wait for `PublicationMatched` status before publishing
+* Readers poll for data availability using `WaitSetAsync` (no CPU spin)
+* Discovery is fully automatic - no manual configuration required
+
+### Message delivery
+
+* Incoming DDS samples are demultiplexed by topic
+* Messages are fanned out to all local subscribers for that topic
+* Delivery uses `Reliability::Reliable` QoS (TCP-like with retries)
+* No persistence (`Durability::Volatile`) - ephemeral RPC semantics
+* `History::KeepLast(1)` - only latest message retained
+
+### QoS Configuration
+
+* **Reliability**: `Reliable`    - Ensures delivery with retries
+* **History**:     `KeepLast(1)` - Prevents correlation confusion
+* **Durability**:  `Volatile`    - No persistence, ephemeral messages
 
 </details>
 
