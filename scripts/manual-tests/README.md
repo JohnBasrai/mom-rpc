@@ -59,6 +59,44 @@ Tests MQTT transport implementations against a Mosquitto broker.
 4. Runs client and validates output contains "Temperature", "Humidity", and "Pressure"
 5. Cleans up (kills server, stops container)
 
+### DDS
+
+Tests DDS transport implementations. DDS is brokerless - peers discover each other automatically via RTPS multicast.
+
+**Usage:**
+```bash
+./dds.sh transport_dust_dds
+```
+
+**Optional - preserve logs:**
+```bash
+./dds.sh transport_dust_dds NO_CLEAN
+```
+
+**Requirements:**
+- No external infrastructure (brokerless)
+- Multicast-enabled network interface
+
+**What it does:**
+1. Builds sensor_server and sensor_client examples with specified feature
+2. Runs server in background
+3. Waits for DDS discovery (default: 1 second)
+4. Runs client and validates output contains "Temperature", "Humidity", and "Pressure"
+5. Cleans up (kills server, removes logs unless NO_CLEAN specified)
+
+**Environment variables:**
+- `DOMAIN_ID` - DDS domain ID (default: 0)
+- `TRANSPORT_URI` - Transport URI (default: `dds:${DOMAIN_ID}`)
+
+**Discovery:**
+DDS uses RTPS multicast for automatic peer discovery. No broker configuration needed.
+
+**Troubleshooting:**
+- If discovery fails, check multicast is enabled on your network interface
+- Firewall rules may block multicast packets
+- Use `NO_CLEAN` parameter to preserve server.log and client.log for debugging
+
+
 ## Design Principles
 
 ### Organized by Protocol, Not Library

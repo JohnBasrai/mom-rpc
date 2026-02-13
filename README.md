@@ -371,6 +371,7 @@ Additional transports may be added in the future behind feature flags.
 |:---------------------|:--------------------------|:---------------|
 | `transport_rumqttc`  | MQTT via rumqttc          | ❌ No          |
 | `transport_lapin`    | AMQP via lapin (RabbitMQ) | ❌ No          |
+| `transport_dust_dds` | DDS via (dust_dds)        | ❌ No          |
 | `logging`            | Enable logging output     | ✅ Yes         |
 
 👉 The **memory transport is always available** - no feature flag required.

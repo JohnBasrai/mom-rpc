@@ -1,4 +1,3 @@
-//! DDS transport implementation using `dust_dds`.
 //!
 //! This module provides an implementation of the `Transport` trait backed by DDS
 //! (Data Distribution Service) using the RTPS wire protocol. It follows an
@@ -119,7 +118,6 @@ const DDS_TYPE_NAME: &str = "DdsEnvelope";
 #[derive(Clone, Debug, DdsType, serde::Serialize, serde::Deserialize)]
 struct DdsEnvelope {
     /// JSON-serialized Envelope
-    //#[dust_dds(key)]
     topic: String,
     /// JSON-serialized envelope data
     data: Vec<u8>,
@@ -975,7 +973,7 @@ fn test_dds_envelope_roundtrip() {
         "reply_to".into(),
         "application/json".into(),
     );
-    let dds_env = DdsEnvelope::from(&env);
-    let env2 = Envelope::from(dds_env);
+    let dds_env = DdsEnvelope::try_from(&env).unwrap();
+    let env2 = Envelope::try_from(dds_env).unwrap();
     assert_eq!(env.correlation_id, env2.correlation_id);
 }

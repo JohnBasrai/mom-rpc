@@ -74,6 +74,7 @@ scripts/
   start-mosquitto.sh        # Start mosquitto MQTT broker for testing
   manual-tests/amqp.sh      # AMQP Manual Integration Test
   manual-tests/mqtt.sh      # MQTT Manual Integration Test
+  manual-tests/dds.sh       # DDS Manual Integration Test
 ```
 
 ## Running Tests
