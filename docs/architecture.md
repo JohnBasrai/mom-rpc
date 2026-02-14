@@ -45,9 +45,9 @@ The architecture follows an **Explicit Module Boundary Pattern (EMBP)** througho
    ┌───────────────┴────────────────┐
    │     Concrete Transports        │
    │  -  memory (reference)         │
-   │  -  MQTT   (rumqttc)           │
    │  -  AMQP   (lapin)             │
    │  -  DDS    (dust_dds)          │
+   │  -  MQTT   (rumqttc)           │
    │  - (future: Kafka, NATS, etc.) │
    └────────────────────────────────┘
 ```
@@ -99,32 +99,26 @@ Transports are organized by **protocol → library** hierarchy:
 
 ```
 transport/
-├── mod.rs
-├── memory.rs             # Flat - always available, brokerless
-├── mqtt/
-│   ├── mod.rs            # Protocol gateway (EMBP)
-│   └── rumqttc.rs        # MQTT via rumqttc library
-└── amqp/
-    ├── mod.rs            # Protocol gateway (EMBP)
-    └── lapin.rs          # AMQP via lapin library
-```
-
-**Future additions follow the same pattern:**
-
-```
-transport/
-├── mqtt/
-│   ├── rumqttc.rs        # MQTT via rumqttc
-│   └── paho.rs           # Future: MQTT via paho-mqtt
 ├── amqp/
-│   ├── lapin.rs          # AMQP via lapin
-│   └── another.rs        # Future: another AMQP library
-├── kafka/
 │   ├── mod.rs
-│   └── rdkafka.rs        # Future: Kafka via rdkafka
-└── dds/
+│   └── lapin.rs          # AMQP via lapin
+├── dds/
+│    ├── mod.rs
+│    └── dust_dds.rs      # DDS via dust_dds
+└── mqtt/
     ├── mod.rs
-    └── dust_dds.rs       # Future: DDS via dust_dds
+    └── rumqttc.rs        # MQTT via rumqttc
+```
+
+Future additions follow this same pattern. There may be multiple libraries used for a given transport.
+
+
+```
+└── mqtt/
+    ├── mod.rs
+    ├── rumqttc.rs
+    └── mqtt-endpoint-tokio
+    ⋮
 ```
 
 This allows multiple implementations per protocol while keeping feature names specific and unambiguous.

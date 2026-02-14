@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
+## [0.7.2] - 2026-02-xx
+
+### Changed
+- Hardened `scripts/pre-publish.sh` with branch and clean-tree validation
+- Added `include` section to `Cargo.toml` to restrict published package contents
+
 ## [0.7.1] - 2026-02-13
 
 ### Added
