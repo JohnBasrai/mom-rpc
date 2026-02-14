@@ -376,7 +376,6 @@ Additional transports may be added in the future behind feature flags.
 | `transport_dust_dds` | DDS via (dust_dds)        | No             |
 | `transport_lapin`    | AMQP via lapin (RabbitMQ) | No             |
 | `transport_rumqttc`  | MQTT via rumqttc          | No             |
-| `logging`            | Enable logging output     | Yes            |
 
 👉 The **memory transport is always available** - no feature flag required.
 
@@ -473,9 +472,12 @@ This library does not handle authentication. Delegate to:
 
 ## Documentation
 
-* [API Documentation](https://docs.rs/mom-rpc) - Complete API reference on docs.rs
-* [Architecture](docs/architecture.md) - Design patterns and module structure
-* [Contributing](CONTRIBUTING.md) - Development guide and standards
+| | |
+|:-------------------|:--------------|
+| [API Documentation](https://docs.rs/mom-rpc) | Complete API reference on docs.rs |
+| [Architecture](docs/architecture.md) | Design patterns and module structure |
+| [Contributing](CONTRIBUTING.md) | Development guide and standards |
+| [Release Notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.1) | Release notes (v0.7.1) |
 
 ---
 

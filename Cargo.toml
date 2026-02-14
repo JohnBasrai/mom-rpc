@@ -1,9 +1,9 @@
 [package]
 name          = "mom-rpc"
-version       = "0.7.1"
+version       = "0.7.2"
 edition       = "2021"
 authors       = ["John Basrai"]
-description   = "Transport-agnostic async RPC over message-oriented middleware (AMQP, MQTT, in-memory)"
+description   = "Transport-agnostic async RPC over message-oriented middleware (e.g AMQP, DDS, MQTT, etc.)"
 license       = "MIT OR Apache-2.0"
 repository    = "https://github.com/JohnBasrai/mom-rpc"
 rust-version  = "1.88" # Required by time crate (transitive dependency via lapin).
@@ -11,6 +11,17 @@ keywords      = ["async", "iot", "messaging", "pubsub", "rpc", ]
 categories    = ["network-programming", "asynchronous"]
 readme        = "README.md"
 documentation = "https://docs.rs/mom-rpc"
+include       = [
+    "src/**",
+    "examples/**",
+    "tests/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+    "Cargo.toml"
+]
+
 
 [dependencies]
 async-trait  = "0.1"
@@ -20,7 +31,6 @@ futures      = { version = "0.3", optional = true } # For DDS
 futures-lite = { version = "2", optional = true }
 lapin        = { version = "4", optional = true }
 rumqttc      = { version = "0.25", optional = true }
-rustdds      = { version = "0.11", optional = true }
 serde        = { version = "1", features = ["derive", "rc"] }
 serde_json   = "1"
 thiserror    = "2"
@@ -31,7 +41,6 @@ uuid         = { version  = "1.11", features = ["v4", "serde"] }
 
 [dev-dependencies]
 anyhow             = "1.0"
-futures            = "0.3.31"
 tokio              = { version = "1", features = ["signal"] }
 tokio-test         = "0.4"
 tracing            = { version = "0.1" }
