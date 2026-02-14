@@ -308,30 +308,57 @@ cargo run --example sensor_client --features transport_rumqttc
 
 ### Logging
 
-The `logging` feature (enabled by default) provides diagnostic output via the `log` crate at `INFO` level during normal operation.
+The `logging` feature (enabled by default) emits diagnostics using the [`tracing`](https://docs.rs/tracing) ecosystem.
 
-**To reduce verbosity**, lower the log level to `WARN` or `ERROR`:
+By default, logs are emitted at `INFO` level.
+
+---
+
+### Reduce Verbosity
+
+Add a subscriber in your application:
+
 ```toml
-[dev-dependencies]
-env_logger = "0.11"
+[dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
+
 ```rust
-// Reduce mom-rpc logs to warnings only
-env_logger::builder()
-    .filter_module("mom_rpc", log::LevelFilter::Warn)
+use tracing_subscriber::{fmt, EnvFilter};
+
+fmt()
+    .with_env_filter(EnvFilter::new("mom_rpc=warn"))
     .init();
 ```
 
-**Note:** Running with `RUST_LOG=mom_rpc=debug` will produce verbose output. This is useful for troubleshooting but not recommended for production.
+---
 
-If you also adjust logging level of the transport libary you can add it to the list:  "`RUST_LOG=mom_rpc=debug,dust_dds=warn`"
+### Runtime Control
 
+You can control logging dynamically via the `RUST_LOG` environment variable:
 
-**To disable logging entirely**:
+```bash
+RUST_LOG=mom_rpc=debug
+```
+
+If you are using a transport backend, you can configure multiple modules:
+
+```bash
+RUST_LOG=mom_rpc=debug,dust_dds=warn
+```
+
+---
+
+### Disable Logging Entirely
+
+Disable the `logging` feature:
+
 ```toml
 [dependencies]
 mom-rpc = { version = "0.7", default-features = false, features = ["transport_rumqttc"] }
 ```
+
+`mom-rpc` does not install a global subscriber. The application is responsible for configuring `tracing`.
 
 ---
 
@@ -439,7 +466,17 @@ The design separates:
 * RPC semantics
 * user-facing APIs
 
-For details, see `docs/architecture.md`.
+## RPC Delivery Semantics
+
+`mom-rpc` provides:
+
+* **At-most-one response** delivered to the caller (first response wins).
+* **No exactly-once guarantees.**
+
+Handler invocation depends on the reliability of the underlying transport.  
+In failure or retry scenarios, a handler may be invoked more than once or not at all.
+
+Applications requiring exactly-once effects must ensure idempotency or implement deduplication keyed by `correlation_id`.
 
 ---
 
@@ -472,10 +509,10 @@ This library does not handle authentication. Delegate to:
 
 ## Documentation
 
-- [Complete API reference on docs.rs](https://docs.rs/mom-rpc/0.7.3)
+- [Complete API reference on docs.rs](https://docs.rs/mom-rpc/0.7.4)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.3)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.4)
 
 ---
 

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
+## [0.7.4] - 2026-02-xx
+
+### Changed
+- Clarified RPC delivery semantics in README.
+  Documented at-most-one response delivery and possible duplicate or
+  failed handler invocation.
+
 ## [0.7.3] - 2026-02-14
 
 ### Changed
