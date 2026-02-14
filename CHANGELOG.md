@@ -5,11 +5,15 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
-## [0.7.2] - 2026-02-xx
+## [0.7.2] - 2026-02-14
 
 ### Changed
-- Hardened `scripts/pre-publish.sh` with branch and clean-tree validation
-- Added `include` section to `Cargo.toml` to restrict published package contents
+- Enforced `rustdoc` warnings as errors in CI
+- Hardened manual transport test scripts (AMQP, MQTT, DDS)
+- Strengthened release validation and packaging boundaries
+- Updated toolchain to `1.93.1`
+- Removed unused dependencies and refreshed lockfile
+- Minor documentation corrections and consistency improvements
 
 ## [0.7.1] - 2026-02-13
 

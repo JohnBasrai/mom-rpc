@@ -27,6 +27,18 @@ if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
     exit 1
 fi
 
+echo "==> Checking branch sync with origin..."
+
+git fetch origin
+
+if ! git diff --quiet HEAD origin/main; then
+    echo "ERROR: Local main is not identical to origin/main"
+    echo "Run: git pull --ff-only"
+    exit 1
+fi
+
+echo "✓ main is in sync with origin/main"
+
 echo "✓ Git state OK"
 echo ""
 

@@ -472,12 +472,10 @@ This library does not handle authentication. Delegate to:
 
 ## Documentation
 
-| | |
-|:-------------------|:--------------|
-| [API Documentation](https://docs.rs/mom-rpc) | Complete API reference on docs.rs |
-| [Architecture](docs/architecture.md) | Design patterns and module structure |
-| [Contributing](CONTRIBUTING.md) | Development guide and standards |
-| [Release Notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.1) | Release notes (v0.7.1) |
+- [Complete API reference on docs.rs](https://docs.rs/mom-rpc/0.7.2)
+- [Design patterns and module structure](docs/architecture.md)
+- [Development guide and standards](CONTRIBUTING.md)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.2)
 
 ---
 
