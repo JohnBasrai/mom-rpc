@@ -67,3 +67,24 @@ if [[ "$librs_versions" != "$expected_version" ]]; then
 fi
 
 echo "✓ Version consistency OK (all examples use: $readme_versions)"
+
+# -------------------------------------------------------------------
+# Verify README release notes link matches Cargo.toml full version
+# -------------------------------------------------------------------
+
+echo "==> Checking README release versioned link"
+
+EXPECTED_DOCS="https://docs.rs/mom-rpc/${cargo_version}"
+EXPECTED_RELEASE="https://github.com/JohnBasrai/mom-rpc/releases/tag/v${cargo_version}"
+
+echo "==> Checking README versioned links"
+
+for expected in "$EXPECTED_DOCS" "$EXPECTED_RELEASE"; do
+    if ! grep -q "$expected" README.md; then
+        echo "ERROR: README.md missing expected link:"
+        echo "       $expected"
+        exit 1
+    fi
+done
+
+echo "✓ README links match version v${cargo_version}"
