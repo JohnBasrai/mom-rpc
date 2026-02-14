@@ -163,7 +163,11 @@ impl Envelope {
 
 /// Handle returned from a successful subscription.
 ///
-/// The subscription remains active until the transport is closed.
+/// The subscription remains active until either:
+/// - The handle is dropped (receiver channel closes)
+/// - The transport is closed
+///
+/// Dropping the handle automatically unsubscribes from the topic.
 pub struct SubscriptionHandle {
     // ---
     /// Receiver channel for delivered envelopes matching this subscription.

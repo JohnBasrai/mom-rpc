@@ -71,7 +71,6 @@ scripts/
   ci-test.sh                # All tests + examples
   local-test.sh             # Local Testing Suite (mirrors CI)
   pre-publish.sh            # Checks if ready to publish to crates.io
-  start-mosquitto.sh        # Start mosquitto MQTT broker for testing
   manual-tests/amqp.sh      # AMQP Manual Integration Test
   manual-tests/mqtt.sh      # MQTT Manual Integration Test
   manual-tests/dds.sh       # DDS Manual Integration Test

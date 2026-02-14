@@ -15,7 +15,7 @@ FEATURE="${1:-}"
 NO_CLEAN=
 NO_CLEAN="${2:-}"
 
-
+: ${FEATURE:=transport_dust_dds}
 # ---
 
 usage() {

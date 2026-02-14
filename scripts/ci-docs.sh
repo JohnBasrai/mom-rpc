@@ -21,6 +21,9 @@ cargo build --example sensor_memory --quiet
 cargo build --example sensor_server --features transport_rumqttc --quiet
 cargo build --example sensor_client --features transport_rumqttc --quiet
 
+scripts/verify-doc-sync.sh
+
+echo
 echo "✅ Documentation OK"
 echo "You may view the docs with command:"
 echo "cargo doc --no-deps --all-features --open"
