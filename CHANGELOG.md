@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
+## [0.7.3] - 2026-02-14
+
+### Changed
+- Version-lock documentation links in README
+- Strengthened documentation verification script
+- Restored strict branch sync check in pre-publish script
+
+### Documentation
+- Minor documentation corrections and consistency improvements
+
 ## [0.7.2] - 2026-02-14
 
 ### Changed
