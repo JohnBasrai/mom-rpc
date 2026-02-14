@@ -7,13 +7,8 @@ echo "==> Checking documentation"
 echo "    Building docs..."
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --quiet
 
-# Check for missing docs on public items
 echo "    Checking for missing documentation..."
-RUSTDOCFLAGS="-D warnings" \
-    cargo doc --all-features --no-deps 2>&1 | grep "warning.*missing documentation" && {
-  echo "❌ Found undocumented public items"
-  exit 1
-} || true
+RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 
 # Verify examples compile (they should also serve as documentation)
 echo "    Verifying examples compile..."
