@@ -13,7 +13,7 @@ FEATURE="${1:-}"
 CONTAINER_NAME="mom-rpc-test-mosquitto"
 MQTT_PORT=1883
 BROKER_URI="mqtt://localhost:${MQTT_PORT}"
-: ${FEATURE:=transport_rumqttc}
+: "${FEATURE:=transport_rumqttc}"
 # ---
 
 usage() {
@@ -52,6 +52,8 @@ fi
 
 # ---
 
+# shell-check does not model traps well
+# shellcheck disable=SC2317
 cleanup() {
     echo ""
     echo "==> Cleaning up..."
@@ -71,7 +73,7 @@ cleanup() {
     fi
     
     # Remove temp files
-    rm -f server.log client.log *.build.log
+    rm -f server.log client.log ./*.build.log
 }
 
 trap cleanup EXIT INT TERM

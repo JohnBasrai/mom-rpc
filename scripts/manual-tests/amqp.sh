@@ -14,7 +14,7 @@ CONTAINER_NAME="mom-rpc-test-rabbitmq"
 AMQP_PORT=5672
 MGMT_PORT=15672
 BROKER_URI="amqp://localhost:${AMQP_PORT}/%2f"
-: ${FEATURE:=transport_lapin}
+: "${FEATURE:=transport_lapin}"
 
 # ---
 
@@ -54,6 +54,8 @@ fi
 
 # ---
 
+# shell-check does not model traps well
+# shellcheck disable=SC2317
 cleanup() {
     echo ""
     echo "==> Cleaning up..."
@@ -73,7 +75,7 @@ cleanup() {
     fi
     
     # Remove temp files
-    rm -f server.log client.log *.build.log
+    rm -f server.log client.log ./*.build.log
 }
 
 trap cleanup EXIT INT TERM

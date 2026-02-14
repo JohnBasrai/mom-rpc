@@ -15,33 +15,9 @@ FEATURE="${1:-}"
 NO_CLEAN=
 NO_CLEAN="${2:-}"
 
-: ${FEATURE:=transport_dust_dds}
-# ---
+export BROKER_URI="$TRANSPORT_URI"
 
-usage() {
-    echo "Usage: $0 <feature-flag>"
-    echo ""
-    echo "Example:"
-    echo "  $0 transport_dust_dds"
-    echo ""
-    echo "Environment variables:"
-    echo "  DDS_DOMAIN - DDS domain ID (default: 0)"
-    echo ""
-    echo "This script:"
-    echo "  1. Builds sensor_server and sensor_client examples"
-    echo "  2. Runs sensor_server in background"
-    echo "  3. Runs sensor_client and validates output"
-    echo "  4. Cleans up (kills server)"
-    echo ""
-    echo "Note: DDS is brokerless - no external infrastructure needed"
-    exit 1
-}
-
-if [ -z "$FEATURE" ]; then
-    echo "Error: Feature flag required"
-    usage
-fi
-
+: "${FEATURE:=transport_dust_dds}"
 # ---
 
 echo "==> Checking prerequisites..."
@@ -53,20 +29,27 @@ fi
 
 # ---
 
+# shell-check does not model traps well
+# shellcheck disable=SC2317
 cleanup() {
     echo ""
     echo "==> Cleaning up..."
-    
+
     # Kill server process
     if [ -n "${SERVER_PID:-}" ]; then
         echo "Killing server (PID: $SERVER_PID)..."
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
     fi
-    
+    if [ -n "${CLIENT_PID:-}" ]; then
+        echo "Killing client (PID: $CLIENT_PID)..."
+        kill "$CLIENT_PID" 2>/dev/null || true
+        wait "$CLIENT_PID" 2>/dev/null || true
+    fi
+
     # Remove temp files
     if [ -z "${NO_CLEAN}" ] ; then
-        rm -f server.log client.log *.build.log
+        rm -f server.log client.log ./*.build.log
     fi
 }
 
@@ -95,10 +78,13 @@ echo "    ✓ Examples built successfully"
 # ---
 
 echo ""
-echo "==> Starting sensor_server..."
+echo "==> Starting sensor_client..."
 
-# Set transport URI via environment variable
-export BROKER_URI="$TRANSPORT_URI"
+cargo --quiet run --example sensor_client --features "$FEATURE" >& client.log &
+CLIENT_PID=$!
+
+echo ""
+echo "==> Starting sensor_server..."
 
 cargo run --quiet --example sensor_server --features "$FEATURE" > server.log 2>&1 &
 SERVER_PID=$!
@@ -107,27 +93,45 @@ echo "    Server PID: $SERVER_PID"
 echo "    Transport URI: $TRANSPORT_URI"
 echo "    Waiting for server to initialize and DDS discovery..."
 
+check_is_alive() {
+    local pid=$1
+    local who=$2
+    # Check if $who is running
+    if ! kill -0 "$pid" 2>/dev/null; then
+        echo "Error: $who process died"
+        echo "$who logs:"
+        cat "${who}.log"
+        exit 1
+    fi
+}
+
 # Check if server is still running
-if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-    echo "Error: Server process died"
-    echo "Server logs:"
-    cat server.log
-    exit 1
-fi
+sleep 1
+check_is_alive "${SERVER_PID}" server
 
 echo "    ✓ Server running"
 
+echo "    Waiting for client to finish (timeout 20s)..."
+
+SECONDS_WAITED=0
+while kill -0 "${CLIENT_PID}" 2>/dev/null; do
+    if [ "${SECONDS_WAITED}" -ge 20 ]; then
+        echo "Client timed out pid:${CLIENT_PID}"
+        exit 1
+    fi
+    sleep 1
+    SECONDS_WAITED=$((SECONDS_WAITED + 1))
+done
+
+wait "${CLIENT_PID}"
+
+
 # ---
-
-echo ""
-echo "==> Running sensor_client..."
-
-cargo --quiet run --example sensor_client --features "$FEATURE" >& client.log
 
 if grep -q  "Temperature" client.log && \
    grep -q  "Humidity"    client.log && \
    grep -q  "Pressure"    client.log && \
-   [ -z "$(grep ERROR client.log)" ]; then
+   ! grep -q ERROR client.log; then
     echo ""
     echo "✅ DDS integration test PASSED"
     echo ""
