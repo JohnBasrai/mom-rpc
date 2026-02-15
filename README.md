@@ -39,6 +39,13 @@ This crate solves that by providing:
 
 ---
 
+## How is this different?
+
+Unlike RPC libraries that target a single broker, `mom-rpc` provides transport abstraction—write your RPC code once, run it on MQTT, AMQP, DDS, or in-memory. The same application works across different brokers by changing feature flags, not code. This matters when you need to deploy the same edge application across different infrastructure, or when your broker choice changes between development and production.
+
+---
+
+
 ## Key properties
 
 * **Transport-agnostic**
