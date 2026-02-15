@@ -117,9 +117,11 @@ Future additions follow this same pattern. There may be multiple libraries used 
 
 ```
 └── mqtt/
-    ├── mod.rs
-    ├── rumqttc.rs
-    └── mqtt-endpoint-tokio
+│   ├── mod.rs
+│   ├── rumqttc.rs
+│   └── new-library-crate
+⋮   ⋮
+└── new-protocol
     ⋮
 ```
 

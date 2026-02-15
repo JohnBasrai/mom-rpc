@@ -67,12 +67,12 @@ act -j docs
 
 ## What to Run When
 
-| Situation | Command | Time |
-|-----------|---------|------|
-| **Quick check** | `./scripts/ci-lint.sh` | ~30s |
-| **Before commit** | `./scripts/ci-lint.sh && ./scripts/ci-test.sh` | ~1m |
-| **Before push** | `./scripts/local-test.sh` | ~5m |
-| **Before release** | `./scripts/pre-publish.sh` | ~10m |
+| Situation            | Command  | Time |
+|----------------------|----------|------|
+| **Quick check**      | `./scripts/ci-lint.sh` | ~30s |
+| **Before commit**    | `./scripts/ci-lint.sh && ./scripts/ci-test.sh` | ~1m |
+| **Before push**      | `./scripts/local-test.sh`  | ~5m |
+| **Before release**   | `./scripts/pre-publish.sh` | ~10m |
 | **Debug CI failure** | `act` | ~10m |
 
 ## CI Environment Variables

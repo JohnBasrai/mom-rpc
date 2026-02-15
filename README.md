@@ -6,7 +6,7 @@
 
 **Transport-agnostic async RPC over message-oriented middleware.**
 
-This crate provides a clean, strongly-typed RPC abstraction on top of unreliable or awkward pub/sub systems (such as MQTT or AMQP), without baking transport details into your application code.
+This crate provides a clean, strongly-typed RPC abstraction on top of pub/sub systems (such as MQTT or AMQP), without baking transport details into your application code.
 
 It is designed to *tame* message brokers, not expose them.
 
@@ -15,7 +15,6 @@ It is designed to *tame* message brokers, not expose them.
 ## Lean by Design
 
 While this crate supports multiple transport implementations, **applications only compile the transports they enable**. The crate size shown on crates.io is the total of all transport implementations combined, but thanks to Cargo features, your application will only include the code for the transports you actually use. A typical application using a single transport will compile to approximately 45-55 KiB of mom-rpc code regardless of how many total transports the library supports.
-
 
 ---
 
@@ -389,7 +388,24 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
 ## Supported Transports
 
 `mom-rpc` provides multiple transport backends. Each is feature-gated so you only compile what you use:
+
 👉 The **memory transport is always available** - no feature flag required.
+
+**You can enable multiple transports and choose at runtime:**
+```toml
+[dependencies]
+mom-rpc = { version = "0.7", features = ["transport_rumqttc", "transport_lapin"] }
+```
+```rust
+// Choose transport based on configuration
+let transport = if use_mqtt {
+    let config = RpcConfig::with_broker("mqtt://...", "client-id");
+    create_transport_for("rumqttc", &config).await?
+} else {
+    let config = RpcConfig::with_broker("amqp://...", "client-id");
+    create_transport_for("lapin", &config).await?
+};
+```
 
 | Transport | Feature Flag | Lines of Code | Use Case |
 |:----------|:-------------|--------------:|:---------|
@@ -400,21 +416,7 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
 
 *Core library: 761 lines. Total: 2,213 lines. SLOC measured using `tokei` (crates.io methodology). As of v0.7.4.*
 
-*Example: An application using the MQTT transport compiles 761 + 405 = 1,166 lines of mom-rpc code.*
-
-### Choosing a Transport
-
-**To use a brokered transport, enable its feature flag in `Cargo.toml`:**
-```toml
-[dependencies]
-mom-rpc = { version = "0.7", features = ["transport_rumqttc"] }
-```
-
-**For testing without a broker:**
-```toml
-[dependencies]
-mom-rpc = "0.7"  # Memory transport included by default
-```
+Example: An application using only the MQTT transport compiles 761 + 405 = 1,166 lines of `mom-rpc` code. With both MQTT and AMQP enabled: 761 + 405 + 310 = 1,476 lines.
 
 ---
 

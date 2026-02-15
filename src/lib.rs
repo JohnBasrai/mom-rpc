@@ -6,7 +6,7 @@
 //!
 //! # Supported Transports
 //!
-//! | Transport Name       | Description                       | Enable Flag          |
+//! | Transport            | Description                       | Enable Flag          |
 //! |:---------------------|:----------------------------------|:---------------------|
 //! | **Memory** (default) | In-process testing transport      | **N/A** (always on)  |
 //! |                      |                                   |                      |

@@ -10,7 +10,7 @@ echo
 echo "==> Verifying doc sync for version $cargo_version"
 
 get_lines() {
-    grep -i -A 8 "# Supported Transports" $1
+    grep -E -i -A 8 "\| *Transport *\|" $1
 }
 
 get_tx_count() {
