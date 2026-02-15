@@ -1,7 +1,6 @@
 [![Crates.io](https://img.shields.io/crates/v/mom-rpc.svg)](https://crates.io/crates/mom-rpc)
 [![Documentation](https://docs.rs/mom-rpc/badge.svg)](https://docs.rs/mom-rpc)
 [![CI](https://github.com/JohnBasrai/mom-rpc/actions/workflows/ci.yml/badge.svg)](https://github.com/JohnBasrai/mom-rpc/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 # mom-rpc
 
@@ -385,37 +384,27 @@ It provides a deterministic loopback environment for testing and examples. It do
 
 Broker-backed transports (e.g. MQTT) are implemented behind feature flags and run out-of-process, with shared state managed by the broker itself. All transports conform to the same RPC contract and approximate the in-memory transport's delivery semantics as closely as the underlying system allows.
 
-### Available brokered transports
-
-* **rumqttc (MQTT)** — 🌟 **MQTT broker-based transport**
-
-  Enable via the `transport_rumqttc` feature. This implementation provides:
-  - Actor-based architecture with safe concurrency
-  - Lazy connection initialization
-  - SUBACK-confirmed subscriptions
-  - Active maintenance and modern async patterns
-
-  ```toml
-  mom-rpc = { version = "0.7", features = ["transport_rumqttc"] }
-  ```
-
-Additional transports may be added in the future behind feature flags.
-
 ---
 
 ## Supported Transports
 
-| Flag                 | Description               | Default Enable |
-|:---------------------|:--------------------------|:---------------|
-| `transport_dust_dds` | DDS via (dust_dds)        | No             |
-| `transport_lapin`    | AMQP via lapin (RabbitMQ) | No             |
-| `transport_rumqttc`  | MQTT via rumqttc          | No             |
-
+`mom-rpc` provides multiple transport backends. Each is feature-gated so you only compile what you use:
 👉 The **memory transport is always available** - no feature flag required.
 
-### Choosing Features
+| Transport | Feature Flag | Lines of Code | Use Case |
+|:----------|:-------------|--------------:|:---------|
+| In-memory | *(always available)* |  67 | Testing, single-process |
+| AMQP      | `transport_lapin`    | 310 | RabbitMQ, enterprise messaging |
+| MQTT      | `transport_rumqttc`  | 405 | IoT, lightweight pub/sub |
+| DDS       | `transport_dust_dds` | 670 | Real-time, mission-critical |
 
-**For production MQTT deployments:**
+*Core library: 761 lines. Total: 2,213 lines. SLOC measured using `tokei` (crates.io methodology). As of v0.7.4.*
+
+*Example: An application using the MQTT transport compiles 761 + 405 = 1,166 lines of mom-rpc code.*
+
+### Choosing a Transport
+
+**To use a brokered transport, enable its feature flag in `Cargo.toml`:**
 ```toml
 [dependencies]
 mom-rpc = { version = "0.7", features = ["transport_rumqttc"] }

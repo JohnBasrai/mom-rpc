@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "    Verify \"Supported Transports\" tables match between README.md and src/lib.rs"
+# Get version from Cargo.toml
+cargo_version=$(awk -F'"' '/^version/ {print $2; exit}' Cargo.toml)
+# Extract minor version (0.7.1 -> 0.7)
+expected_version=$(echo "$cargo_version" | cut -d. -f1-2)
+
+echo
+echo "==> Verifying doc sync for version $cargo_version"
 
 get_lines() {
     grep -i -A 8 "# Supported Transports" $1
@@ -36,15 +42,11 @@ if [[ "${readme_flags}" != "${librs_flags}" ]] ; then
 fi
 
 # Check version consistency in examples
-echo "==> Checking version consistency in examples"
-
-# Get version from Cargo.toml
-cargo_version=$(awk -F'"' '/^version/ {print $2; exit}' Cargo.toml)
-# Extract minor version (0.7.1 -> 0.7)
-expected_version=$(echo "$cargo_version" | cut -d. -f1-2)
+echo
+echo "  ==> Checking version consistency in examples"
 
 echo "    Cargo.toml version: $cargo_version"
-echo "    Expected in docs: $expected_version"
+echo "    Expected in docs:   $expected_version"
 
 readme_versions=$(grep -o 'mom-rpc = .*version = "[^"]*"' README.md | \
     sed -E 's/.*version = "([^"]*)".*/\1/' | sort -u)
@@ -66,18 +68,16 @@ if [[ "$librs_versions" != "$expected_version" ]]; then
     exit 1
 fi
 
-echo "✓ Version consistency OK (all examples use: $readme_versions)"
+echo "  ✓ Release link OK"
 
 # -------------------------------------------------------------------
 # Verify README release notes link matches Cargo.toml full version
 # -------------------------------------------------------------------
-
-echo "==> Checking README release versioned link"
+echo
+echo "  ==> Checking README release versioned link"
 
 EXPECTED_DOCS="https://docs.rs/mom-rpc/${cargo_version}"
 EXPECTED_RELEASE="https://github.com/JohnBasrai/mom-rpc/releases/tag/v${cargo_version}"
-
-echo "==> Checking README versioned links"
 
 for expected in "$EXPECTED_DOCS" "$EXPECTED_RELEASE"; do
     if ! grep -q "$expected" README.md; then
@@ -86,5 +86,18 @@ for expected in "$EXPECTED_DOCS" "$EXPECTED_RELEASE"; do
         exit 1
     fi
 done
+echo "  ✓ Versioned links OK"
 
-echo "✓ README links match version v${cargo_version}"
+echo
+echo "  ==> Checking README SLOC table"
+
+cargo_version=$(awk -F'"' '/^version/ {print $2; exit}' Cargo.toml)
+readme_version=$(grep -oP 'As of v\K[\d.]+(?=\.)' README.md | head -1)
+
+if [ "$cargo_version" != "$readme_version" ]; then
+    echo "ERROR: SLOC table shows v$readme_version but Cargo.toml has v$cargo_version"
+    exit 1
+fi
+echo "  ✓ SLOC table OK"
+echo
+echo "✓ All documentation checks passed for v$cargo_version"
