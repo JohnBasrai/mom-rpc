@@ -31,7 +31,8 @@ use tokio::sync::mpsc;
 /// Addresses are immutable, cheap to clone, and safe to share across threads.
 ///
 /// The domain layer makes no assumptions about address syntax, hierarchy,
-/// or wildcard behavior.
+/// or wildcard behavior. See [`Envelope`] for an example of creating an
+/// Address.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Address(pub Arc<str>);
 
@@ -56,6 +57,7 @@ where
 /// matching behavior.
 ///
 /// The in-memory transport provides the reference semantics for matching.
+/// See [`SubscriptionHandle`] for an example of reading messages from a subscription.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Subscription(pub Arc<str>);
 
@@ -84,6 +86,38 @@ where
 ///
 /// The transport layer does not interpret the payload or metadata fields;
 /// it is responsible only for delivery.
+///
+/// # Examples
+///
+/// ## Creating a request envelope
+///
+/// ```
+/// # use mom_rpc::{Envelope, Address};
+/// # use bytes::Bytes;
+/// # use std::sync::Arc;
+/// let envelope = Envelope::request(
+///     Address::from("requests/sensor-service"),
+///     "read_temperature".into(),
+///     Bytes::from(b"payload".to_vec()),
+///     Arc::from("correlation-123"),
+///     Address::from("responses/client-1"),
+///     Arc::from("application/json"),
+/// );
+/// ```
+///
+/// ## Creating a response envelope
+///
+/// ```
+/// # use mom_rpc::{Envelope, Address};
+/// # use bytes::Bytes;
+/// # use std::sync::Arc;
+/// let envelope = Envelope::response(
+///     Address::from("responses/client-1"),
+///     Bytes::from(b"result".to_vec()),
+///     Arc::from("correlation-123"),
+///     Arc::from("application/json"),
+/// );
+/// ```
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Envelope {
     // ---
@@ -124,6 +158,16 @@ pub struct Envelope {
 
 impl Envelope {
     // ---
+    /// Create a request envelope.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - Destination address (e.g., "requests/service-name")
+    /// * `method` - RPC method name
+    /// * `payload` - Serialized request data
+    /// * `correlation_id` - Unique identifier for matching responses
+    /// * `reply_to` - Address where the response should be sent
+    /// * `content_type` - Payload format (typically "application/json")
     pub fn request(
         address: Address,
         method: Arc<str>,
@@ -143,6 +187,14 @@ impl Envelope {
         }
     }
 
+    /// Create a response envelope.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - Destination address (from the request's reply_to field)
+    /// * `payload` - Serialized response data
+    /// * `correlation_id` - Correlation ID from the original request
+    /// * `content_type` - Payload format (typically "application/json")
     pub fn response(
         address: Address,
         payload: Bytes,
@@ -168,6 +220,25 @@ impl Envelope {
 /// - The transport is closed
 ///
 /// Dropping the handle automatically unsubscribes from the topic.
+///
+/// # Example
+///
+/// ```no_run
+/// # use mom_rpc::{create_memory_transport, RpcConfig, Subscription};
+/// # async fn example() -> mom_rpc::Result<()> {
+/// # let config = RpcConfig::memory("app");
+/// # let transport = create_memory_transport(&config).await?;
+/// #
+/// let subscription = Subscription::from("notifications");
+/// let mut handle = transport.subscribe(subscription).await?;
+///
+/// // Read messages from the subscription
+/// while let Some(envelope) = handle.inbox.recv().await {
+///     println!("Received: {:?}", envelope);
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct SubscriptionHandle {
     // ---
     /// Receiver channel for delivered envelopes matching this subscription.

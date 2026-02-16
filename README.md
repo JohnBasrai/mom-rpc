@@ -414,7 +414,7 @@ let transport = if use_mqtt {
 | MQTT      | `transport_rumqttc`  | 405 | IoT, lightweight pub/sub |
 | DDS       | `transport_dust_dds` | 700 | Real-time, mission-critical |
 
-*Core library: 761 lines. Total: 2,243 lines. SLOC measured using tokei (crates.io methodology). As of v0.7.4.*
+*Core library: 761 lines. Total: 2,243 lines. SLOC measured using tokei (crates.io methodology). As of v0.7.5.*
 
 Example: An application using only the MQTT transport compiles 761 + 405 = 1,166 lines of `mom-rpc` code. With both MQTT and AMQP enabled: 761 + 405 + 310 = 1,476 lines.
 
@@ -507,10 +507,10 @@ This library does not handle authentication. Delegate to:
 
 ## Documentation
 
-- [Complete API reference on docs.rs](https://docs.rs/mom-rpc/0.7.4)
+- [Complete API reference on docs.rs](https://docs.rs/mom-rpc/0.7.5)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.4)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.5)
 
 ---
 
