@@ -143,6 +143,10 @@ impl Transport for MemoryTransport {
 /// Create a new in-memory transport.
 ///
 /// This transport is always available and requires no external resources.
+///
+/// # Errors
+///
+/// Currently infallible - always returns `Ok`.
 pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
     let transport_id = config.transport_id.clone();

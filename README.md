@@ -1,22 +1,20 @@
 [![Crates.io](https://img.shields.io/crates/v/mom-rpc.svg)](https://crates.io/crates/mom-rpc)
 [![Documentation](https://docs.rs/mom-rpc/badge.svg)](https://docs.rs/mom-rpc)
 [![CI](https://github.com/JohnBasrai/mom-rpc/actions/workflows/ci.yml/badge.svg)](https://github.com/JohnBasrai/mom-rpc/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 # mom-rpc
 
 **Transport-agnostic async RPC over message-oriented middleware.**
 
-This crate provides a clean, strongly-typed RPC abstraction on top of unreliable or awkward pub/sub systems (such as MQTT or AMQP), without baking transport details into your application code.
+This crate provides a clean, strongly-typed RPC abstraction on top of pub/sub systems (such as MQTT or AMQP), without baking transport details into your application code.
 
-It is designed to *tame* message brokers, not expose them.
+It is designed to *tame* message brokers, not expose them to application level code.
 
 ---
 
 ## Lean by Design
 
 While this crate supports multiple transport implementations, **applications only compile the transports they enable**. The crate size shown on crates.io is the total of all transport implementations combined, but thanks to Cargo features, your application will only include the code for the transports you actually use. A typical application using a single transport will compile to approximately 45-55 KiB of mom-rpc code regardless of how many total transports the library supports.
-
 
 ---
 
@@ -38,6 +36,13 @@ This crate solves that by providing:
 * **predictable behavior**, even over unreliable systems
 
 ---
+
+## How is this different?
+
+Unlike RPC libraries that target a single broker, `mom-rpc` provides transport abstraction—write your RPC code once, run it on MQTT, AMQP, DDS, or in-memory. The same application works across different brokers by changing feature flags, not code. This matters when you need to deploy the same edge application across different infrastructure, or when your broker choice changes between development and production.
+
+---
+
 
 ## Key properties
 
@@ -308,30 +313,57 @@ cargo run --example sensor_client --features transport_rumqttc
 
 ### Logging
 
-The `logging` feature (enabled by default) provides diagnostic output via the `log` crate at `INFO` level during normal operation.
+The `logging` feature (enabled by default) emits diagnostics using the [`tracing`](https://docs.rs/tracing) ecosystem.
 
-**To reduce verbosity**, lower the log level to `WARN` or `ERROR`:
+By default, logs are emitted at `INFO` level.
+
+---
+
+### Reduce Verbosity
+
+Add a subscriber in your application:
+
 ```toml
-[dev-dependencies]
-env_logger = "0.11"
+[dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
+
 ```rust
-// Reduce mom-rpc logs to warnings only
-env_logger::builder()
-    .filter_module("mom_rpc", log::LevelFilter::Warn)
+use tracing_subscriber::{fmt, EnvFilter};
+
+fmt()
+    .with_env_filter(EnvFilter::new("mom_rpc=warn"))
     .init();
 ```
 
-**Note:** Running with `RUST_LOG=mom_rpc=debug` will produce verbose output. This is useful for troubleshooting but not recommended for production.
+---
 
-If you also adjust logging level of the transport libary you can add it to the list:  "`RUST_LOG=mom_rpc=debug,dust_dds=warn`"
+### Runtime Control
 
+You can control logging dynamically via the `RUST_LOG` environment variable:
 
-**To disable logging entirely**:
+```bash
+RUST_LOG=mom_rpc=debug
+```
+
+If you are using a transport backend, you can configure multiple modules:
+
+```bash
+RUST_LOG=mom_rpc=debug,dust_dds=warn
+```
+
+---
+
+### Disable Logging Entirely
+
+Disable the `logging` feature:
+
 ```toml
 [dependencies]
 mom-rpc = { version = "0.7", default-features = false, features = ["transport_rumqttc"] }
 ```
+
+`mom-rpc` does not install a global subscriber. The application is responsible for configuring `tracing`.
 
 ---
 
@@ -351,47 +383,40 @@ It provides a deterministic loopback environment for testing and examples. It do
 
 Broker-backed transports (e.g. MQTT) are implemented behind feature flags and run out-of-process, with shared state managed by the broker itself. All transports conform to the same RPC contract and approximate the in-memory transport's delivery semantics as closely as the underlying system allows.
 
-### Available brokered transports
-
-* **rumqttc (MQTT)** — 🌟 **MQTT broker-based transport**
-
-  Enable via the `transport_rumqttc` feature. This implementation provides:
-  - Actor-based architecture with safe concurrency
-  - Lazy connection initialization
-  - SUBACK-confirmed subscriptions
-  - Active maintenance and modern async patterns
-
-  ```toml
-  mom-rpc = { version = "0.7", features = ["transport_rumqttc"] }
-  ```
-
-Additional transports may be added in the future behind feature flags.
-
 ---
 
 ## Supported Transports
 
-| Flag                 | Description               | Default Enable |
-|:---------------------|:--------------------------|:---------------|
-| `transport_dust_dds` | DDS via (dust_dds)        | No             |
-| `transport_lapin`    | AMQP via lapin (RabbitMQ) | No             |
-| `transport_rumqttc`  | MQTT via rumqttc          | No             |
+`mom-rpc` provides multiple transport backends. Each is feature-gated so you only compile what you use:
 
 👉 The **memory transport is always available** - no feature flag required.
 
-### Choosing Features
-
-**For production MQTT deployments:**
+**You can enable multiple transports and choose at runtime:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.7", features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.7", features = ["transport_rumqttc", "transport_lapin"] }
+```
+```rust
+// Choose transport based on configuration
+let transport = if use_mqtt {
+    let config = RpcConfig::with_broker("mqtt://...", "client-id");
+    create_transport_for("rumqttc", &config).await?
+} else {
+    let config = RpcConfig::with_broker("amqp://...", "client-id");
+    create_transport_for("lapin", &config).await?
+};
 ```
 
-**For testing without a broker:**
-```toml
-[dependencies]
-mom-rpc = "0.7"  # Memory transport included by default
-```
+| Transport | Feature Flag | Lines of Code | Use Case |
+|:----------|:-------------|--------------:|:---------|
+| In-memory | *(always available)* |  67 | Testing, single-process |
+| AMQP      | `transport_lapin`    | 310 | RabbitMQ, enterprise messaging |
+| MQTT      | `transport_rumqttc`  | 405 | IoT, lightweight pub/sub |
+| DDS       | `transport_dust_dds` | 700 | Real-time, mission-critical |
+
+*Core library: 761 lines. Total: 2,243 lines. SLOC measured using tokei (crates.io methodology). As of v0.7.4.*
+
+Example: An application using only the MQTT transport compiles 761 + 405 = 1,166 lines of `mom-rpc` code. With both MQTT and AMQP enabled: 761 + 405 + 310 = 1,476 lines.
 
 ---
 
@@ -439,7 +464,17 @@ The design separates:
 * RPC semantics
 * user-facing APIs
 
-For details, see `docs/architecture.md`.
+## RPC Delivery Semantics
+
+`mom-rpc` provides:
+
+* **At-most-one response** delivered to the caller (first response wins).
+* **No exactly-once guarantees.**
+
+Handler invocation depends on the reliability of the underlying transport.  
+In failure or retry scenarios, a handler may be invoked more than once or not at all.
+
+Applications requiring exactly-once effects must ensure idempotency or implement deduplication keyed by `correlation_id`.
 
 ---
 
@@ -472,10 +507,10 @@ This library does not handle authentication. Delegate to:
 
 ## Documentation
 
-- [Complete API reference on docs.rs](https://docs.rs/mom-rpc/0.7.3)
+- [Complete API reference on docs.rs](https://docs.rs/mom-rpc/0.7.4)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.3)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.4)
 
 ---
 

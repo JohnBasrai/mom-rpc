@@ -1,9 +1,9 @@
 [package]
 name          = "mom-rpc"
-version       = "0.7.3"
+version       = "0.7.4"
 edition       = "2021"
 authors       = ["John Basrai"]
-description   = "Transport-agnostic async RPC over message-oriented middleware (e.g AMQP, DDS, MQTT, etc.)"
+description   = "RPC abstraction for MQTT, AMQP, and DDS brokers. Async request/response with automatic correlation handling."
 license       = "MIT OR Apache-2.0"
 repository    = "https://github.com/JohnBasrai/mom-rpc"
 rust-version  = "1.88" # Required by time crate (transitive dependency via lapin).

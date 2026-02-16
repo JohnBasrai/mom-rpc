@@ -52,6 +52,8 @@ The architecture follows an **Explicit Module Boundary Pattern (EMBP)** througho
    └────────────────────────────────┘
 ```
 
+Note: Each transport, other than memory, is feature-gated. Applications compile only what they use.
+
 ---
 
 ## Transport Layer
@@ -115,9 +117,11 @@ Future additions follow this same pattern. There may be multiple libraries used 
 
 ```
 └── mqtt/
-    ├── mod.rs
-    ├── rumqttc.rs
-    └── mqtt-endpoint-tokio
+│   ├── mod.rs
+│   ├── rumqttc.rs
+│   └── new-library-crate
+⋮   ⋮
+└── new-protocol
     ⋮
 ```
 
@@ -293,9 +297,9 @@ RPC routing uses a two-level scheme:
 * **Method field** (inside `Envelope`) selects the handler
 
 For example:
-* Client publishes to address `requests/math`
-* Envelope contains `method: "add"`
-* Server at node `math` dispatches to the `add` handler
+* Client publishes to address `requests/env-sensor-42`
+* Envelope contains `method: "read_humidity"`
+* Server at node `env-sensor-42` dispatches to the `read_humidity` handler
 
 This allows:
 
@@ -358,9 +362,19 @@ The explicit `run()` method ensures handlers are registered before requests can 
 Handlers are async functions with typed request/response payloads:
 
 ```rust
-server.register("add", |req: AddRequest| async move {
-    Ok(AddResponse { sum: req.a + req.b })
-});
+server.register("read_temperature", |req: ReadTemperature| async move {
+        // ---
+        let celsius = 21.5_f32; // Simulate reading hw temperature sensor.
+        let (value, unit) = match req.unit {
+            TemperatureUnit::Celsius => (celsius, "C"),
+            TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
+        };
+        Ok(SensorReading {
+            value,
+            unit: unit.to_string(),
+            timestamp_ms: current_time_ms(),
+        })
+    });
 ```
 
 Handlers:
@@ -375,15 +389,14 @@ Transport concerns (addresses, correlation, reply topics) are handled by the ser
 
 ---
 
-## Error Handling
+This crate uses a **typed error model** (`crate::error::RpcError`) exclusively. This enables callers to handle errors programmatically via pattern matching.
 
-This crate uses a **typed error model** (`crate::error::RpcError`) exclusively.
-
-* `anyhow` is not used
-* Transport-specific errors are mapped at boundaries
+* `anyhow` and `Box<dyn Error>` are not used. Both lose type information.
+* Transport-specific errors are converted to `RpcError` variants (e.g., `Transport(String)`) to keep transport types out of the public API
+* Error context is preserved as descriptive strings
 * Errors are meaningful, stable, and composable
 
-Human-readable diagnostics belong in logging, not in error variants.
+Error variants carry essential context. Detailed diagnostics (stack traces, full error chains) belong in logging.
 
 ---
 
@@ -405,7 +418,7 @@ It provides a **clean RPC abstraction over imperfect transports**, not a perfect
 
 Potential future extensions include:
 
-* Additional transport implementations (Kafka, NATS, DDS, etc.)
+* Additional transport implementations (Kafka, NATS, etc.)
 * Optional response caching for idempotent requests
 * Pluggable retry / timeout policies
 * Full-duplex client/server unification
