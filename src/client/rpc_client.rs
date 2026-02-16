@@ -93,6 +93,11 @@ impl RpcClient {
     /// Create a client with an explicitly provided transport.
     ///
     /// This is the constructor you want for tests and for advanced users.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RpcError::Transport` if the transport fails to establish the
+    /// response subscription for this client.
     pub async fn with_transport(
         transport: TransportPtr,
         node_id: impl Into<String>,
@@ -164,6 +169,12 @@ impl RpcClient {
     ///
     /// This calls `crate::create_transport()` (feature-driven) and then
     /// constructs the client using `with_transport()`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RpcError::Transport` if:
+    /// - Transport creation fails (invalid URI, connection failure, etc.)
+    /// - The response subscription cannot be established
     pub async fn new(config: &crate::RpcConfig, node_id: &str) -> Result<Self> {
         // ---
         let transport = crate::create_transport(config).await?;
@@ -175,6 +186,13 @@ impl RpcClient {
     /// - `target_node_id`: service identity (e.g., `"sensor-service"`)
     /// - `method`: RPC method name
     /// - `req`: request payload
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `RpcError::Serialization` - request serialization fails
+    /// - `RpcError::Transport` - message publish fails or response channel closes
+    /// - `RpcError::Serialization` - response deserialization fails
     pub async fn request_to<TReq, TResp>(
         &self,
         target_node_id: &str,
@@ -233,6 +251,13 @@ impl RpcClient {
     /// - `method`: RPC method name
     /// - `req`: request payload
     /// - `timeout`: maximum time to wait for response
+    ///
+    /// # Errors
+    ///
+    /// Returns:
+    /// - `RpcError::Timeout` if the request exceeds the specified timeout
+    /// - `RpcError::Serialization` if request/response serialization fails
+    /// - `RpcError::Transport` if the publish fails or transport shuts down
     ///
     /// # Example
     ///

@@ -82,6 +82,37 @@ struct Inner {
 
 impl RpcServer {
     // ---
+    /// Create a server with an explicitly provided transport.
+    ///
+    /// The server will subscribe to `requests/{node_id}` when `run()` or `spawn()`
+    /// is called. Use `register()` to add handlers before starting the server.
+    ///
+    /// This constructor is infallible - subscription and actual server operation
+    /// happen in `run()` or `spawn()`.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use mom_rpc::{RpcServer, create_memory_transport, RpcConfig};
+    /// # use serde::{Serialize, Deserialize};
+    /// # #[derive(Serialize, Deserialize)]
+    /// # struct MyRequest {}
+    /// # #[derive(Serialize, Deserialize)]
+    /// # struct MyResponse {}
+    /// # async fn example() -> mom_rpc::Result<()> {
+    /// let config = RpcConfig::memory("server");
+    /// let transport = create_memory_transport(&config).await?;
+    /// let server = RpcServer::with_transport(transport, "my-service");
+    ///
+    /// // Register handlers before running
+    /// server.register("method_name", |req: MyRequest| async move {
+    ///     Ok(MyResponse { /* ... */ })
+    /// });
+    ///
+    /// server.run().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn with_transport(transport: TransportPtr, node_id: impl Into<String>) -> Self {
         // ---
         Self {
@@ -101,6 +132,10 @@ impl RpcServer {
     ///
     /// **Important:** This method blocks the current task. Use this in your main
     /// application loop. For tests or background usage, use `spawn()` instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RpcError::Transport` if the request subscription cannot be established.
     ///
     /// # Example
     ///
@@ -136,7 +171,7 @@ impl RpcServer {
         self.run_with_shutdown(shutdown_rx).await
     }
 
-    /// Spawn server in background, returning a JoinHandle.
+    /// Spawn server in background, returning a `JoinHandle`.
     ///
     /// This is an alternative to `run()` for when you need the server running
     /// in the background while doing other work in the main task.
@@ -147,6 +182,12 @@ impl RpcServer {
     /// - When you want manual control over the server task
     ///
     /// **Important:** Use either `run()` OR `spawn()`, not both.
+    ///
+    /// # Errors
+    ///
+    /// The returned `JoinHandle` wraps a `Result`. Awaiting it may return:
+    /// - `RpcError::Transport` if the request subscription cannot be established
+    /// - `JoinError` if the spawned task panics
     ///
     /// # Example
     ///
@@ -176,11 +217,17 @@ impl RpcServer {
 
     /// Trigger graceful shutdown of the server.
     ///
-    /// Sends a shutdown signal to `run()`, causing it to exit its loop.
-    /// This does not wait for the server to actually stop - use the JoinHandle
+    /// Sends a shutdown signal to `run()`, causing it to exit its loop.  This
+    /// does not wait for the server to actually stop - use the `JoinHandle`
     /// from `spawn()` or rely on `run()` returning if you need synchronization.
     ///
-    /// **Important:** When using `spawn()`, always call `shutdown()` BEFORE
+    /// **Important:** When using `spawn()`, always call `shutdown()` **before**
+    /// closing the transport. Closing the transport first will leave the server
+    /// task hanging.
+    ///
+    /// This method is infallible and safe to call multiple times.
+    ///
+    /// **Important:** When using `spawn()`, always call `shutdown()` **before**
     /// closing the transport. Closing the transport first will leave the server
     /// task hanging.
     ///
@@ -254,6 +301,8 @@ impl RpcServer {
     /// The handler receives the decoded request payload type and returns a response
     /// payload type. The server wraps these into the crate’s request/response
     /// envelope format (including correlation).
+    ///
+    /// If a handler is already registered for this method, it will be replaced.
     pub fn register<F, Fut, Req, Resp>(&self, method: &str, handler: F)
     where
         F: Fn(Req) -> Fut + Send + Sync + Clone + 'static,

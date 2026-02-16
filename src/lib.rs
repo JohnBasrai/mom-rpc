@@ -168,9 +168,9 @@ pub use domain::{
 ///
 /// # Errors
 ///
-/// Returns an error if:
-/// - Broker URI is invalid (for MQTT/AMQP transports)
-/// - Transport initialization fails
+/// Returns `RpcError::Transport` if:
+/// - Broker URI is invalid or malformed
+/// - Transport-specific initialization fails (connection, authentication, etc.)
 pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
 
@@ -205,8 +205,12 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
 /// * `config` - Transport configuration
 ///
 /// # Errors
-/// Returns `RpcError::Transport` if the specified transport is not enabled via features
-/// or if the transport name is unrecognized.
+///
+/// Returns `RpcError::Transport` if:
+/// - The specified transport is not enabled via feature flags
+/// - The transport name is unrecognized
+/// - The broker URI format is invalid
+/// - Transport initialization fails (connection, authentication, etc.)
 ///
 /// # Examples
 ///

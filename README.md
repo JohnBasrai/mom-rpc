@@ -8,7 +8,7 @@
 
 This crate provides a clean, strongly-typed RPC abstraction on top of pub/sub systems (such as MQTT or AMQP), without baking transport details into your application code.
 
-It is designed to *tame* message brokers, not expose them.
+It is designed to *tame* message brokers, not expose them to application level code.
 
 ---
 
@@ -412,9 +412,9 @@ let transport = if use_mqtt {
 | In-memory | *(always available)* |  67 | Testing, single-process |
 | AMQP      | `transport_lapin`    | 310 | RabbitMQ, enterprise messaging |
 | MQTT      | `transport_rumqttc`  | 405 | IoT, lightweight pub/sub |
-| DDS       | `transport_dust_dds` | 670 | Real-time, mission-critical |
+| DDS       | `transport_dust_dds` | 700 | Real-time, mission-critical |
 
-*Core library: 761 lines. Total: 2,213 lines. SLOC measured using `tokei` (crates.io methodology). As of v0.7.4.*
+*Core library: 761 lines. Total: 2,243 lines. SLOC measured using tokei (crates.io methodology). As of v0.7.4.*
 
 Example: An application using only the MQTT transport compiles 761 + 405 = 1,166 lines of `mom-rpc` code. With both MQTT and AMQP enabled: 761 + 405 + 310 = 1,476 lines.
 

@@ -7,10 +7,27 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ## [0.7.4] - 2026-02-xx
 
+### Added
+- Added SLOC breakdown table to README showing lines of code per transport
+- Added comprehensive error documentation to all public API methods (`RpcClient`, `RpcServer`, factory functions)
+- Added runtime transport selection example showing `create_transport_for` usage
+- Added unit tests for DDS domain ID parsing (5 test cases covering valid input, missing prefix, invalid numbers, overflow)
+
 ### Changed
-- Clarified RPC delivery semantics in README.
-  Documented at-most-one response delivery and possible duplicate or
-  failed handler invocation.
+- Clarified RPC delivery semantics documentation: at-most-one response delivery, possible duplicate or failed handler invocation
+- Made DDS `parse_domain_id` function fallible, returning `RpcError::Transport` on invalid URI format
+- Consolidated redundant transport feature tables in README into single comprehensive table
+- Improved crate description for better search discoverability
+- Enhanced error handling discussion in architecture documentation
+- Made DDS `parse_domain_id` function fallible, returning `RpcError::Transport` on invalid URI format instead of silently defaulting to domain 0
+
+### Fixed
+- Fixed doc test compilation errors in API examples
+
+### Internal
+- Added `scripts/sloc-count.sh` to generate SLOC table for releases
+- Updated `verify-doc-sync.sh` to validate SLOC table version
+- Removed outdated MIT-only license badge (crate is dual-licensed MIT OR Apache-2.0)
 
 ## [0.7.3] - 2026-02-14
 

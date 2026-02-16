@@ -848,7 +848,7 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     // ---
 
     // Parse domain ID from transport_uri (format: dds:45)
-    let domain_id = parse_domain_id(config.transport_uri.as_deref());
+    let domain_id = parse_domain_id(config.transport_uri.as_deref())?;
 
     // Get the singleton factory instance for StdRuntime
     let participant_factory = DomainParticipantFactoryAsync::get_instance();
@@ -874,26 +874,27 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
 /// Parses domain ID from `transport_uri`.
 ///
 /// Expected format: `dds:<domain_id>` (e.g., "dds:0", "dds:45")
-/// Returns 0 (default domain) if uri is `None` or parsing fails.
-fn parse_domain_id(uri: Option<&str>) -> u16 {
+/// Returns `Ok(0)` (default domain) when `uri` is `None`.
+/// Returns `RpcError::Transport` if the URI format is invalid or domain ID cannot be parsed.
+fn parse_domain_id(uri: Option<&str>) -> Result<u16> {
     // ---
 
     let Some(uri) = uri else {
-        log_debug!("No transport_uri provided, using default DDS domain 0");
-        return 0;
+        return Ok(0); // Default domain when not specified
     };
 
-    let domain_str = uri.strip_prefix("dds:").unwrap_or_else(|| {
-        log_debug!("transport_uri does not start with 'dds:', using default domain 0");
-        ""
-    });
-
-    domain_str.parse().unwrap_or_else(|_| {
-        log_debug!(
-            "Failed to parse domain ID from '{}', using default domain 0",
+    let domain_str = uri.strip_prefix("dds:").ok_or_else(|| {
+        RpcError::Transport(format!(
+            "Invalid DDS URI format '{}', expected 'dds:<domain_id>'",
             uri
-        );
-        0
+        ))
+    })?;
+
+    domain_str.parse().map_err(|_| {
+        RpcError::Transport(format!(
+            "Invalid DDS domain ID '{}', must be a number",
+            domain_str
+        ))
     })
 }
 
@@ -962,18 +963,55 @@ async fn wait_for_matched_reader(
     Ok(())
 }
 
-#[test]
-fn test_dds_envelope_roundtrip() {
-    // --
-    let env = Envelope::request(
-        crate::Address::from("hello"),
-        "method".into(),
-        bytes::Bytes::new(),
-        "CorrelationId".into(),
-        "reply_to".into(),
-        "application/json".into(),
-    );
-    let dds_env = DdsEnvelope::try_from(&env).unwrap();
-    let env2 = Envelope::try_from(dds_env).unwrap();
-    assert_eq!(env.correlation_id, env2.correlation_id);
+#[cfg(test)]
+mod tests {
+    // ---
+    use super::*;
+
+    #[test]
+    fn test_dds_envelope_roundtrip() {
+        // --
+        let env = Envelope::request(
+            crate::Address::from("hello"),
+            "method".into(),
+            bytes::Bytes::new(),
+            "CorrelationId".into(),
+            "reply_to".into(),
+            "application/json".into(),
+        );
+        let dds_env = DdsEnvelope::try_from(&env).unwrap();
+        let env2 = Envelope::try_from(dds_env).unwrap();
+        assert_eq!(env.correlation_id, env2.correlation_id);
+    }
+
+    #[test]
+    fn test_parse_domain_id_none() {
+        assert_eq!(parse_domain_id(None).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_parse_domain_id_valid() {
+        assert_eq!(parse_domain_id(Some("dds:0")).unwrap(), 0);
+        assert_eq!(parse_domain_id(Some("dds:42")).unwrap(), 42);
+        assert_eq!(parse_domain_id(Some("dds:65535")).unwrap(), 65535);
+    }
+
+    #[test]
+    fn test_parse_domain_id_missing_prefix() {
+        let result = parse_domain_id(Some("42"));
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), RpcError::Transport(_)));
+    }
+
+    #[test]
+    fn test_parse_domain_id_invalid_number() {
+        let result = parse_domain_id(Some("dds:not_a_number"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_domain_id_overflow() {
+        let result = parse_domain_id(Some("dds:99999"));
+        assert!(result.is_err());
+    }
 }
