@@ -20,6 +20,12 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     exit 1
 fi
 
+if [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+    echo "WARNING: Untracked files present (won't affect publish)"
+    git ls-files --others --exclude-standard
+    echo ""
+fi
+
 # Ensure no unpushed commits
 git fetch origin main >/dev/null 2>&1
 if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
