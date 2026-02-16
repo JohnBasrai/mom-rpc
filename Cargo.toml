@@ -1,6 +1,6 @@
 [package]
 name          = "mom-rpc"
-version       = "0.7.5"
+version       = "0.7.6"
 edition       = "2021"
 authors       = ["John Basrai"]
 description   = "RPC abstraction for MQTT, AMQP, and DDS brokers. Async request/response with automatic correlation handling."

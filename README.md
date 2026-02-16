@@ -408,7 +408,7 @@ let transport = if use_mqtt {
 ```
 Applications can also run multiple transports concurrently (e.g., MQTT for IoT devices and AMQP for backend services) by creating separate transport instances.
 
-**Transport implementation sizes (as of v0.7.5):**
+**Transport implementation sizes (as of v0.7.6):**
 
 | Transport | Feature Flag         | SLOC | Use Case |
 |:----------|:---------------------|-----:|:---------|
@@ -551,7 +551,7 @@ This library does not handle authentication. Delegate to:
 - [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.5)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.6)
 
 ---
 
