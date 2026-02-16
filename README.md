@@ -442,6 +442,24 @@ let response: MyResponse = client
 
 ---
 
+## Full-Duplex Applications
+
+For applications that both send and receive RPC calls (like device↔agent communication), share a single transport between client and server:
+```rust
+let transport = create_transport(&config).await?;
+
+// Server receives calls
+let server = RpcServer::with_transport(transport.clone(), "device-123");
+server.register("get_status", |req| async { /* ... */ });
+
+// Client makes calls
+let client = RpcClient::with_transport(transport.clone(), "device-123-client").await?;
+```
+
+See [rust-edge-agent](https://github.com/JohnBasrai/rust-edge-agent/blob/main/src/agent/run.rs) for a complete example.
+
+--
+
 ## What this crate is **not**
 
 This crate intentionally does **not** provide:
@@ -507,7 +525,7 @@ This library does not handle authentication. Delegate to:
 
 ## Documentation
 
-- [Complete API reference on docs.rs](https://docs.rs/mom-rpc/0.7.5)
+- [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
 - [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.5)
