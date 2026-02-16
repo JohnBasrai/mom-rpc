@@ -35,8 +35,11 @@ echo ""
 total=$(tokei src/ --output json | jq '.Rust.code')
 core=$((total - amqp_sloc - mqtt_sloc - dds_sloc))
 
-echo "> *Core library: $core lines, including In-memory. Total: $total lines (as of v$VERSION).*"
-echo "> *SLOC measured using \`tokei\` (crates.io methodology).*"
-echo ">"
-echo "> Example: An application using only the MQTT transport compiles $core + $mqtt_sloc = $((core + mqtt_sloc)) lines of \`mom-rpc\` code."
-echo "> With both MQTT and AMQP enabled: $core + $mqtt_sloc + $amqp_sloc = $((core + mqtt_sloc + amqp_sloc)) lines."
+echo "**Notes:**"
+echo " - *Core library: $core lines, including In-memory."
+echo " - *Total: $total lines.*"
+echo " - *SLOC measured using \`tokei\` (crates.io methodology).*"
+echo
+echo "Example: An application using only the MQTT transport compiles $core + $mqtt_sloc = $((core + mqtt_sloc)) lines of \`mom-rpc\` code."
+echo "With both MQTT and AMQP enabled: $core + $mqtt_sloc + $amqp_sloc = $((core + mqtt_sloc + amqp_sloc)) lines."
+echo

@@ -408,7 +408,7 @@ let transport = if use_mqtt {
 ```
 Applications can also run multiple transports concurrently (e.g., MQTT for IoT devices and AMQP for backend services) by creating separate transport instances.
 
-**Transport implementation sizes:**
+**Transport implementation sizes (as of v0.7.5):**
 
 | Transport | Feature Flag         | SLOC | Use Case |
 |:----------|:---------------------|-----:|:---------|
@@ -417,11 +417,13 @@ Applications can also run multiple transports concurrently (e.g., MQTT for IoT d
 | MQTT      | `transport_rumqttc`  |  405 | IoT, lightweight pub/sub |
 | DDS       | `transport_dust_dds` |  694 | Real-time, mission-critical |
 
-> *Core library: 819 lines, including In-memory. Total: 2228 lines (as of v0.7.5).*
-> *SLOC measured using `tokei` (crates.io methodology).*
->
-> Example: An application using only the MQTT transport compiles 819 + 405 = 1224 lines of `mom-rpc` code.
-> With both MQTT and AMQP enabled: 819 + 405 + 310 = 1534 lines.
+**Notes:**
+ - *Core library, including In-memory: 819 lines*
+ - *Total SLOC: 2,228 lines*
+ - *Measured using `tokei` (crates.io methodology)*
+
+Example: An application using only the MQTT transport compiles 819 + 405 = 1224 lines of `mom-rpc` code.
+With both MQTT and AMQP enabled: 819 + 405 + 310 = 1534 lines.
 
 ---
 
