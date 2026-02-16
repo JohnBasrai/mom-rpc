@@ -71,6 +71,16 @@
 //! - `sensor_server.rs` - Transport-agnostic server example
 //! - `sensor_client.rs` - Transport-agnostic client example
 
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn
+    )
+)]
+
 // Import all sub modules once...
 mod client;
 mod domain;

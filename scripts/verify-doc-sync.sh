@@ -92,7 +92,7 @@ echo
 echo "  ==> Checking README SLOC table"
 
 cargo_version=$(awk -F'"' '/^version/ {print $2; exit}' Cargo.toml)
-readme_version=$(grep -oP 'As of v\K[\d.]+(?=\.)' README.md | head -1)
+readme_version=$(grep -oP '[Aa]s of v\K[\d.]+' README.md | head -1)
 
 if [ "$cargo_version" != "$readme_version" ]; then
     echo "ERROR: SLOC table shows v$readme_version but Cargo.toml has v$cargo_version"
