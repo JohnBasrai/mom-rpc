@@ -5,12 +5,8 @@
 //!
 //! Run with: cargo run --example sensor_memory
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::panic_in_result_fn
-)]
+// Allow unwrap in examples for clearer documentation
+#![allow(clippy::unwrap_used)]
 
 mod common;
 

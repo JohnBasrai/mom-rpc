@@ -76,7 +76,7 @@ echo "  ✓ Release link OK"
 echo
 echo "  ==> Checking README release versioned link"
 
-EXPECTED_DOCS="https://docs.rs/mom-rpc/${cargo_version}"
+EXPECTED_DOCS="https://docs.rs/mom-rpc"
 EXPECTED_RELEASE="https://github.com/JohnBasrai/mom-rpc/releases/tag/v${cargo_version}"
 
 for expected in "$EXPECTED_DOCS" "$EXPECTED_RELEASE"; do
