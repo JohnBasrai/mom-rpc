@@ -79,6 +79,9 @@ echo "    ✓ Examples built successfully"
 
 echo ""
 echo "==> Starting sensor_client..."
+# NOTE: Client starts before server to stress-test DDS discovery timing.
+# The client's wait_for_matched_reader() should handle the server
+# appearing after the client is already running.
 
 cargo --quiet run --example sensor_client --features "$FEATURE" >& client.log &
 CLIENT_PID=$!
@@ -90,6 +93,7 @@ cargo run --quiet --example sensor_server --features "$FEATURE" > server.log 2>&
 SERVER_PID=$!
 
 echo "    Server PID: $SERVER_PID"
+echo "    Client PID: $CLIENT_PID"
 echo "    Transport URI: $TRANSPORT_URI"
 echo "    Waiting for server to initialize and DDS discovery..."
 

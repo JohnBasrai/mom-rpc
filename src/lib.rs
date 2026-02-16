@@ -66,10 +66,10 @@
 //!
 //! # Examples
 //!
-//! See the `examples/` directory for complete working examples:
+//! See the [examples/](https://github.com/JohnBasrai/mom-rpc/blob/main/examples/)
 //! - `sensor_memory.rs` - In-memory transport (no broker needed)
-//! - `sensor_server.rs` - MQTT/AMQP server example
-//! - `sensor_client.rs` - MQTT/AMQP client example
+//! - `sensor_server.rs` - Transport-agnostic server example
+//! - `sensor_client.rs` - Transport-agnostic client example
 
 #![cfg_attr(
     test,

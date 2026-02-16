@@ -406,17 +406,24 @@ let transport = if use_mqtt {
     create_transport_for("lapin", &config).await?
 };
 ```
+Applications can also run multiple transports concurrently (e.g., MQTT for IoT devices and AMQP for backend services) by creating separate transport instances.
 
-| Transport | Feature Flag | Lines of Code | Use Case |
-|:----------|:-------------|--------------:|:---------|
-| In-memory | *(always available)* |  67 | Testing, single-process |
-| AMQP      | `transport_lapin`    | 310 | RabbitMQ, enterprise messaging |
-| MQTT      | `transport_rumqttc`  | 405 | IoT, lightweight pub/sub |
-| DDS       | `transport_dust_dds` | 700 | Real-time, mission-critical |
+**Transport implementation sizes (as of v0.7.6):**
 
-*Core library: 761 lines. Total: 2,243 lines. SLOC measured using tokei (crates.io methodology). As of v0.7.4.*
+| Transport | Feature Flag         | SLOC | Use Case |
+|:----------|:---------------------|-----:|:---------|
+| In-memory | *(always available)* |   67 | Testing, single-process |
+| AMQP      | `transport_lapin`    |  310 | RabbitMQ, enterprise messaging |
+| MQTT      | `transport_rumqttc`  |  405 | IoT, lightweight pub/sub |
+| DDS       | `transport_dust_dds` |  694 | Real-time, mission-critical |
 
-Example: An application using only the MQTT transport compiles 761 + 405 = 1,166 lines of `mom-rpc` code. With both MQTT and AMQP enabled: 761 + 405 + 310 = 1,476 lines.
+**Notes:**
+ - *Core library, including In-memory: 819 lines*
+ - *Total SLOC: 2,228 lines*
+ - *Measured using `tokei` (crates.io methodology)*
+
+Example: An application using only the MQTT transport compiles 819 + 405 = 1224 lines of `mom-rpc` code.
+With both MQTT and AMQP enabled: 819 + 405 + 310 = 1534 lines.
 
 ---
 
@@ -439,6 +446,24 @@ let response: MyResponse = client
 
 // Returns RpcError::Timeout if request exceeds timeout
 ```
+
+---
+
+## Full-Duplex Applications
+
+For applications that both send and receive RPC calls (like device↔agent communication), share a single transport between client and server:
+```rust
+let transport = create_transport(&config).await?;
+
+// Server receives calls
+let server = RpcServer::with_transport(transport.clone(), "device-123");
+server.register("get_status", |req| async { /* ... */ });
+
+// Client makes calls
+let client = RpcClient::with_transport(transport.clone(), "device-123-client").await?;
+```
+
+See [rust-edge-agent](https://github.com/JohnBasrai/rust-edge-agent/blob/main/src/agent/run.rs) for a complete example.
 
 ---
 
@@ -471,10 +496,26 @@ The design separates:
 * **At-most-one response** delivered to the caller (first response wins).
 * **No exactly-once guarantees.**
 
-Handler invocation depends on the reliability of the underlying transport.  
+Handler invocation depends on the reliability of the underlying transport.
 In failure or retry scenarios, a handler may be invoked more than once or not at all.
 
 Applications requiring exactly-once effects must ensure idempotency or implement deduplication keyed by `correlation_id`.
+
+---
+
+## Transport-Specific Considerations
+
+**Broker-based transports (MQTT, AMQP):**
+Due to the star topology, there's a potential race condition during startup where
+clients may publish before servers have subscribed. Current mitigation: manual
+delays in test scripts. Additionally, the broker represents both a single point
+of failure and a serialization bottleneck. See Issue [Add retry-with-backoff to handle transport startup races #49](https://github.com/JohnBasrai/mom-rpc/issues/49) for proposed solutions
+including retry with exponential backoff.
+
+**Peer-to-peer transports (DDS):**
+Direct peer-to-peer discovery eliminates the startup race through explicit
+reader/writer matching. DDS also eliminates the single point of failure and
+serialization bottleneck inherent in broker-based architectures.
 
 ---
 
@@ -507,10 +548,10 @@ This library does not handle authentication. Delegate to:
 
 ## Documentation
 
-- [Complete API reference on docs.rs](https://docs.rs/mom-rpc/0.7.4)
+- [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.4)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.6)
 
 ---
 

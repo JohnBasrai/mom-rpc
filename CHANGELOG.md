@@ -5,7 +5,27 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
-## [0.7.4] - 2026-02-xx
+## [0.7.5] - 2026-02-17
+
+### Added
+- Usage example to `SubscriptionHandle` showing how to read from inbox
+- Constructor examples to `Envelope` showing `Arc<str>` field usage
+- Cross-reference from `Subscription` to `SubscriptionHandle`
+- Full-duplex application pattern documentation in README
+- Transport-specific considerations section documenting startup race (#49) and architecture trade-offs
+
+### Changed
+- Updated dependencies (futures, syn, async-executor)
+- Improved CI linting to check all features (`--all-features` flag)
+- Enhanced DDS discovery documentation and test coverage
+- Updated SLOC counting script to calculate core library size dynamically
+- Changed SLOC table format: "Lines of Code" → "SLOC", added intro text
+
+### Fixed
+- Fixed uninlined format args in DDS transport (clippy warning)
+- Fixed pre-publish script to detect untracked files
+
+## [0.7.4] - 2026-02-15
 
 ### Added
 - Added SLOC breakdown table to README showing lines of code per transport

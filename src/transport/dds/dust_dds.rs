@@ -896,6 +896,16 @@ fn parse_domain_id(uri: Option<&str>) -> Result<u16> {
     })
 }
 
+// Wait for at least one DDS reader to match this writer's topic.
+//
+// This prevents the "π-bomb" anti-pattern where publishers send data before
+// subscribers have discovered them, causing message loss in DDS.
+//
+// The function checks for existing matches FIRST before setting up a WaitSet
+// to avoid a race condition where a reader could match between the check and
+// the wait setup, causing an unnecessary timeout.
+//
+// Returns Ok when at least one reader is matched, or an error on timeout.
 async fn wait_for_matched_reader(
     tid: &str,
     topic: &str,
@@ -904,20 +914,16 @@ async fn wait_for_matched_reader(
 ) -> Result<()> {
     // ---
 
-    log_debug!("{tid}: wait_for_matched_reader, topic:{topic}");
-
     // Check FIRST - avoid race condition
     let status = writer.get_publication_matched_status().await.map_err(|e| {
         RpcError::Transport(format!("get_publication_matched_status failed: {e:?}"))
     })?;
 
     if status.current_count > 0 {
-        log_debug!(
-            "{tid}: already matched {} readers for topic {topic}",
-            status.current_count
-        );
-        return Ok(()); // ← Server would return here and succeed!
+        return Ok(()); // Already matched, no need to wait
     }
+
+    log_debug!("{tid}: wait_for_matched_reader, topic:{topic}");
 
     // Only set up WaitSet if count is 0
     log_debug!("{tid}: wait_for_matched_reader, topic:{topic}");
