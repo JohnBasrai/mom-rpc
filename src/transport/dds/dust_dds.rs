@@ -885,15 +885,13 @@ fn parse_domain_id(uri: Option<&str>) -> Result<u16> {
 
     let domain_str = uri.strip_prefix("dds:").ok_or_else(|| {
         RpcError::Transport(format!(
-            "Invalid DDS URI format '{}', expected 'dds:<domain_id>'",
-            uri
+            "Invalid DDS URI format '{uri}', expected 'dds:<domain_id>'"
         ))
     })?;
 
     domain_str.parse().map_err(|_| {
         RpcError::Transport(format!(
-            "Invalid DDS domain ID '{}', must be a number",
-            domain_str
+            "Invalid DDS domain ID '{domain_str}', must be a number"
         ))
     })
 }
