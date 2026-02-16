@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
     let config = RpcConfig::with_broker(&broker_uri, "sensor-client");
     let transport = create_transport(&config).await?;
 
-    let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
+    let client = RpcClient::with_transport(transport.clone(), "client-1", config).await?;
 
     let temp: SensorReading = client
         .request_to(

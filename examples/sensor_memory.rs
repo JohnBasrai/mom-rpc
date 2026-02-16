@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
     // Spawn server in background so we can use the main task for client
     let _handle = server.spawn();
 
-    let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
+    let client = RpcClient::with_transport(transport.clone(), "client-1", config).await?;
 
     let temp: SensorReading = client
         .request_to(

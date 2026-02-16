@@ -39,6 +39,7 @@ struct MathServer {
     _server: RpcServer,
     transport: TransportPtr,
     node_id: String,
+    config: RpcConfig,
 }
 
 impl MathServer {
@@ -66,6 +67,7 @@ impl MathServer {
             _server: server,
             transport,
             node_id,
+            config,
         })
     }
 
@@ -90,6 +92,10 @@ impl MathServer {
     fn node_id(&self) -> &str {
         &self.node_id
     }
+
+    fn config(&self) -> &RpcConfig {
+        &self.config
+    }
 }
 
 #[tokio::test]
@@ -102,7 +108,8 @@ async fn test_basic_request() -> Result<()> {
     let server = MathServer::new("test_basic_request").await?;
     info!("after MathServer::new");
 
-    let client = RpcClient::with_transport(server.transport(), "Sally").await?;
+    let client =
+        RpcClient::with_transport(server.transport(), "Sally", server.config().clone()).await?;
     info!("after RpcClient::new");
 
     info!("sending math add 2 3...");
@@ -125,7 +132,7 @@ async fn test_concurrent_requests() {
     init_tracing();
 
     let server = MathServer::new("test_concurrent_requests").await.unwrap();
-    let client = RpcClient::with_transport(server.transport(), "George")
+    let client = RpcClient::with_transport(server.transport(), "George", server.config().clone())
         .await
         .unwrap();
 
@@ -172,7 +179,7 @@ async fn test_timeout() -> Result<()> {
     // Give the server task time to subscribe
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let client = RpcClient::with_transport(transport.clone(), "Denis").await?;
+    let client = RpcClient::with_transport(transport.clone(), "Denis", config.clone()).await?;
 
     info!("test_timeout: sending 1 + 1");
 
@@ -217,7 +224,8 @@ async fn test_error_response() -> Result<()> {
     let handle = server.spawn();
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let client = RpcClient::with_transport(transport.clone(), "error-client").await?;
+    let client =
+        RpcClient::with_transport(transport.clone(), "error-client", config.clone()).await?;
 
     // Test error case
     let result: Result<AddResponse> = client
@@ -254,9 +262,9 @@ async fn test_multiple_clients() -> Result<()> {
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
     // Create 3 separate clients
-    let client1 = RpcClient::with_transport(transport.clone(), "client-1").await?;
-    let client2 = RpcClient::with_transport(transport.clone(), "client-2").await?;
-    let client3 = RpcClient::with_transport(transport.clone(), "client-3").await?;
+    let client1 = RpcClient::with_transport(transport.clone(), "client-1", config.clone()).await?;
+    let client2 = RpcClient::with_transport(transport.clone(), "client-2", config.clone()).await?;
+    let client3 = RpcClient::with_transport(transport.clone(), "client-3", config.clone()).await?;
 
     // All clients make requests concurrently
     let (r1, r2, r3) = tokio::join!(
@@ -306,7 +314,8 @@ async fn test_transport_disconnect() -> Result<()> {
     let handle = server.spawn();
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let client = RpcClient::with_transport(transport.clone(), "disconnect-client").await?;
+    let client =
+        RpcClient::with_transport(transport.clone(), "disconnect-client", config.clone()).await?;
 
     // Start request
     let fut = client.request_to::<AddRequest, AddResponse>(
@@ -341,7 +350,8 @@ async fn test_request_with_timeout_success() -> Result<()> {
     let handle = server.spawn();
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let client = RpcClient::with_transport(transport.clone(), "timeout-client").await?;
+    let client =
+        RpcClient::with_transport(transport.clone(), "timeout-client", config.clone()).await?;
 
     // Request with generous timeout should succeed
     let resp: AddResponse = client
@@ -376,7 +386,7 @@ async fn test_request_with_timeout_expires() -> Result<()> {
     let handle = server.spawn();
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let client = RpcClient::with_transport(transport.clone(), "timeout-client-2")
+    let client = RpcClient::with_transport(transport.clone(), "timeout-client-2", config.clone())
         .await
         .unwrap();
 

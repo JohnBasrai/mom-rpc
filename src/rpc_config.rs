@@ -4,6 +4,61 @@
 //! (e.g. MQTT client options). Transport layers are responsible for
 //! interpreting this config into concrete connection settings.
 
+use std::time::Duration;
+
+/// Retry configuration with exponential backoff.
+///
+/// Configures automatic retry behavior for handling transient failures
+/// in broker-based transports (MQTT, AMQP) where servers may not be
+/// subscribed when clients publish requests.
+///
+/// # Example
+///
+/// ```
+/// use mom_rpc::RetryConfig;
+/// use std::time::Duration;
+///
+/// let retry_config = RetryConfig {
+///     max_attempts: 5,
+///     multiplier: 2.0,
+///     initial_delay: Duration::from_millis(100),
+///     max_delay: Duration::from_secs(10),
+/// };
+/// ```
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    /// Maximum number of retry attempts (0 = no retries, just the initial attempt).
+    pub max_attempts: u32,
+
+    /// Backoff multiplier applied to the delay after each retry.
+    ///
+    /// Example: 2.0 doubles the delay each time (exponential backoff).
+    pub multiplier: f32,
+
+    /// Initial delay before the first retry.
+    pub initial_delay: Duration,
+
+    /// Maximum delay between retry attempts (caps exponential growth).
+    pub max_delay: Duration,
+}
+
+impl Default for RetryConfig {
+    /// Reasonable default retry configuration.
+    ///
+    /// - `max_attempts`: 3
+    /// - `multiplier`: 2.0 (exponential backoff)
+    /// - `initial_delay`: 100ms
+    /// - `max_delay`: 5s
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            multiplier: 2.0,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(5),
+        }
+    }
+}
+
 /// Transport configuration and connection parameters.
 #[derive(Debug, Clone)]
 pub struct RpcConfig {
@@ -32,6 +87,12 @@ pub struct RpcConfig {
     ///
     /// If `None`, the queue name is derived from `transport_id`.
     pub response_queue_name: Option<String>,
+
+    /// Optional retry configuration for handling transient failures.
+    ///
+    /// When configured, RPC requests will automatically retry on
+    /// retryable transport errors using exponential backoff.
+    pub retry_config: Option<RetryConfig>,
 }
 
 impl RpcConfig {
@@ -45,6 +106,7 @@ impl RpcConfig {
             transport_id: transport_id.into(),
             request_queue_name: None,
             response_queue_name: None,
+            retry_config: None,
         }
     }
 
@@ -56,6 +118,7 @@ impl RpcConfig {
             transport_id: transport_id.into(),
             request_queue_name: None,
             response_queue_name: None,
+            retry_config: None,
         }
     }
 
@@ -74,6 +137,25 @@ impl RpcConfig {
     /// Set a custom response queue name (AMQP only).
     pub fn with_response_queue_name(mut self, name: impl Into<String>) -> Self {
         self.response_queue_name = Some(name.into());
+        self
+    }
+
+    /// Configure retry behavior with exponential backoff.
+    ///
+    /// Enables automatic retry of failed RPC requests on retryable
+    /// transport errors. Particularly useful for broker-based transports
+    /// (MQTT, AMQP) to handle startup race conditions.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mom_rpc::{RpcConfig, RetryConfig};
+    ///
+    /// let config = RpcConfig::with_broker("mqtt://localhost:1883", "client")
+    ///     .with_retry(RetryConfig::default());
+    /// ```
+    pub fn with_retry(mut self, config: RetryConfig) -> Self {
+        self.retry_config = Some(config);
         self
     }
 }

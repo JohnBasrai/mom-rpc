@@ -26,8 +26,16 @@ pub enum RpcError {
     Serialization(#[from] serde_json::Error),
 
     /// A transport-level failure that does not map to a more specific variant.
-    #[error("transport error")]
+    #[error("transport error: {0}")]
     Transport(String),
+
+    /// A retryable transport-level failure (connection lost, publish failed, etc.).
+    ///
+    /// This variant indicates a transient error that may succeed if retried.
+    /// When retry is configured, the RPC client will automatically retry
+    /// operations that fail with this error.
+    #[error("retryable transport error: {0}")]
+    TransportRetryable(String),
 
     /// No handler was registered for the requested method.
     ///
