@@ -49,7 +49,7 @@ use crate::{
 
 /// Shared message bus for the in-memory transport.
 ///
-/// Simulates a message broker within a single process. All [`MemoryTransport`]
+/// Simulates a message broker within a single process. All `MemoryTransport`
 /// instances that share a `MemoryHub` can publish and receive each other's
 /// messages, exactly as nodes connected to a real broker would.
 ///
@@ -99,13 +99,13 @@ impl MemoryHub {
         })
     }
 
-    async fn publish(&self, transport_id: &str, env: Envelope) -> Result<()> {
+    async fn publish(&self, _transport_id: &str, env: Envelope) -> Result<()> {
         // ---
         let subs = self.subscriptions.read().await;
 
         for (sub, senders) in subs.iter() {
             if sub.0 == env.address.0 {
-                log_debug!("{transport_id}: publish to {sub:?}");
+                log_debug!("{_transport_id}: publish to {sub:?}");
 
                 for sender in senders {
                     // Ignore send failures; a closed channel indicates
@@ -123,9 +123,13 @@ impl MemoryHub {
         Ok(())
     }
 
-    async fn subscribe(&self, transport_id: &str, sub: Subscription) -> Result<SubscriptionHandle> {
+    async fn subscribe(
+        &self,
+        _transport_id: &str,
+        sub: Subscription,
+    ) -> Result<SubscriptionHandle> {
         // ---
-        log_debug!("{transport_id}: subscribe to {sub:?}");
+        log_debug!("{_transport_id}: subscribe to {sub:?}");
 
         let (tx, rx) = mpsc::channel(16);
 
@@ -135,9 +139,9 @@ impl MemoryHub {
         Ok(SubscriptionHandle { inbox: rx })
     }
 
-    async fn close(&self, transport_id: &str) -> Result<()> {
+    async fn close(&self, _transport_id: &str) -> Result<()> {
         // ---
-        log_debug!("{transport_id}: closing transport...");
+        log_debug!("{_transport_id}: closing transport...");
 
         let mut subs = self.subscriptions.write().await;
         subs.clear();

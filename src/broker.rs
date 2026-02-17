@@ -58,6 +58,10 @@ struct Inner {
     // Server-side state (for Server and FullDuplex modes)
     handlers: HandlerRegistry,
     _server_rx_task: Option<JoinHandle<()>>,
+
+    // Shutdown signaling - shared across clones
+    shutdown_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    shutdown_rx: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
 }
 
 // Handler trait for type-erased async functions
@@ -160,6 +164,8 @@ impl RpcBroker {
             }
         };
 
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
         Ok(Self {
             inner: Arc::new(Inner {
                 transport,
@@ -171,6 +177,8 @@ impl RpcBroker {
                 _rx_task: rx_task,
                 handlers,
                 _server_rx_task: server_rx_task,
+                shutdown_tx: Arc::new(Mutex::new(Some(shutdown_tx))),
+                shutdown_rx: Arc::new(Mutex::new(Some(shutdown_rx))),
             }),
         })
     }
@@ -182,7 +190,7 @@ impl RpcBroker {
         pending: Arc<Mutex<HashMap<String, oneshot::Sender<Bytes>>>>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let subscription = Subscription::from(format!("responses/{}", node_id));
+            let subscription = Subscription::from(format!("responses/{node_id}"));
             let mut handle = match transport.subscribe(subscription).await {
                 Ok(h) => h,
                 Err(e) => {
@@ -191,7 +199,7 @@ impl RpcBroker {
                 }
             };
 
-            crate::log_debug!("client task started for responses/{}", node_id);
+            crate::log_debug!("client task started for responses/{node_id}");
 
             while let Some(envelope) = handle.inbox.recv().await {
                 let correlation_id = match envelope.correlation_id {
@@ -210,11 +218,11 @@ impl RpcBroker {
                 if let Some(tx) = tx {
                     let _ = tx.send(envelope.payload);
                 } else {
-                    crate::log_debug!("no pending request for correlation_id: {}", correlation_id);
+                    crate::log_debug!("no pending request for correlation_id: {correlation_id}");
                 }
             }
 
-            crate::log_debug!("client task stopped for responses/{}", node_id);
+            crate::log_debug!("client task stopped for responses/{node_id}");
         })
     }
 
@@ -225,7 +233,7 @@ impl RpcBroker {
         handlers: Arc<Mutex<HashMap<String, Arc<dyn HandlerFn>>>>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let subscription = Subscription::from(format!("requests/{}", node_id));
+            let subscription = Subscription::from(format!("requests/{node_id}"));
             let mut handle = match transport.subscribe(subscription).await {
                 Ok(h) => h,
                 Err(e) => {
@@ -234,7 +242,7 @@ impl RpcBroker {
                 }
             };
 
-            crate::log_debug!("server task started for requests/{}", node_id);
+            crate::log_debug!("server task started for requests/{node_id}");
 
             while let Some(envelope) = handle.inbox.recv().await {
                 let method = match envelope.method {
@@ -270,7 +278,7 @@ impl RpcBroker {
                 let handler = match handler {
                     Some(h) => h,
                     None => {
-                        crate::log_warn!("no handler for method: {}", method);
+                        crate::log_warn!("no handler for method: {method}");
                         // Could send error response here
                         continue;
                     }
@@ -302,7 +310,7 @@ impl RpcBroker {
                 });
             }
 
-            crate::log_debug!("server task stopped for requests/{}", node_id);
+            crate::log_debug!("server task stopped for requests/{node_id}");
         })
     }
 
@@ -412,7 +420,7 @@ impl RpcBroker {
             pending.insert(correlation_id_str.clone(), tx);
         }
 
-        let request_addr = Address::from(format!("requests/{}", target_node_id));
+        let request_addr = Address::from(format!("requests/{target_node_id}"));
 
         let env = Envelope::request(
             request_addr,
@@ -529,13 +537,25 @@ impl RpcBroker {
             }
         }
 
-        // Server task already running - just keep broker alive
-        std::future::pending::<()>().await;
+        // Wait for shutdown signal
+        let shutdown_rx = lock_ignore_poison(&self.inner.shutdown_rx).take();
+        if let Some(rx) = shutdown_rx {
+            let _ = rx.await;
+        }
         Ok(())
     }
 
     /// Shutdown the broker.
     pub async fn shutdown(&self) {
+        // Send shutdown signal
+        {
+            let mut tx_guard = lock_ignore_poison(&self.inner.shutdown_tx);
+            if let Some(tx) = tx_guard.take() {
+                let _ = tx.send(());
+            }
+        }
+
+        // Close transport
         let _ = self.inner.transport.close().await;
     }
 }

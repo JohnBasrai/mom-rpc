@@ -509,7 +509,7 @@ This library does not handle authentication. Delegate to:
 - [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.8.0)
 
 ---
 

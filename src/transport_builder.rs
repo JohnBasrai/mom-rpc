@@ -218,12 +218,12 @@ impl TransportBuilder {
 
         // If sugar mode was used, generate queue names based on which flag is set
         if self.called_client_mode {
-            self.response_queue = Some(format!("responses/{}", node_id));
+            self.response_queue = Some(format!("responses/{node_id}"));
         } else if self.called_server_mode {
-            self.request_queue = Some(format!("requests/{}", node_id));
+            self.request_queue = Some(format!("requests/{node_id}"));
         } else if self.called_full_duplex {
-            self.request_queue = Some(format!("requests/{}", node_id));
-            self.response_queue = Some(format!("responses/{}", node_id));
+            self.request_queue = Some(format!("requests/{node_id}"));
+            self.response_queue = Some(format!("responses/{node_id}"));
         }
 
         // Validate at least one queue is specified
@@ -243,7 +243,7 @@ impl TransportBuilder {
 
         let config = crate::TransportConfig {
             uri,
-            node_id: self.node_id.unwrap(),
+            node_id: node_id.into(),
             mode,
             request_queue: self.request_queue,
             response_queue: self.response_queue,

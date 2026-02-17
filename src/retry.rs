@@ -24,19 +24,7 @@ use tokio::time::sleep;
 /// in broker-based transports (MQTT, AMQP) where servers may not be
 /// subscribed when clients publish requests.
 ///
-/// # Example
-///
-/// ```
-/// use mom_rpc::RetryConfig;
-/// use std::time::Duration;
-///
-/// let retry_config = RetryConfig {
-///     max_attempts: 5,
-///     multiplier: 2.0,
-///     initial_delay: Duration::from_millis(100),
-///     max_delay: Duration::from_secs(10),
-/// };
-/// ```
+/// Configure retry behavior through `RpcBrokerBuilder::retry_config()`.
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
     /// Maximum number of retry attempts (0 = no retries, just the initial attempt).

@@ -17,7 +17,7 @@ NO_CLEAN="${2:-}"
 
 export BROKER_URI="$TRANSPORT_URI"
 
-: "${FEATURE:=transport_dust_dds}"
+: "${FEATURE:=transport_dust_dds transport_lapin transport_rumqttc}"
 # ---
 
 echo "==> Checking prerequisites..."

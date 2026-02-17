@@ -323,14 +323,15 @@ impl Envelope {
 /// # Example
 ///
 /// ```no_run
-/// # use mom_rpc::{create_memory_transport, TransportConfig, TransportMode, Subscription};
+/// # use mom_rpc::{TransportBuilder, Subscription};
 /// # async fn example() -> mom_rpc::Result<()> {
-/// # let config = TransportConfig {
-/// #     uri: String::new(), node_id: "app".into(), mode: TransportMode::FullDuplex,
-/// #     request_queue: None, response_queue: None, transport_type: None, keep_alive_secs: None,
-/// # };
-/// # let transport = create_memory_transport(config).await?;
-/// #
+/// let transport = TransportBuilder::new()
+///     .uri("memory://")
+///     .node_id("app")
+///     .full_duplex()
+///     .build()
+///     .await?;
+///
 /// let subscription = Subscription::from("notifications");
 /// let mut handle = transport.subscribe(subscription).await?;
 ///
@@ -367,7 +368,7 @@ pub struct SubscriptionHandle {
 ///
 /// # Available Implementations
 ///
-/// - [`crate::create_memory_transport`] - In-memory transport (always available)
+/// - `create_memory_transport` - In-memory transport (always available)
 ///
 /// # Notes
 ///
@@ -416,5 +417,5 @@ pub trait Transport: Send + Sync {
 /// This is an `Arc<dyn Transport>`, which means:
 /// - `.clone()` is cheap (only increments a reference count)
 /// - Multiple clones share the same underlying connection
-/// Used to erase concrete transport types behind a stable domain interface.
+/// - Used to erase concrete transport types behind a stable domain interface.
 pub type TransportPtr = Arc<dyn Transport>;
