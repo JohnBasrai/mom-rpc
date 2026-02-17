@@ -1,6 +1,6 @@
 [package]
 name          = "mom-rpc"
-version       = "0.7.6"
+version       = "0.8.0"
 edition       = "2021"
 authors       = ["John Basrai"]
 description   = "RPC abstraction for MQTT, AMQP, and DDS brokers. Async request/response with automatic correlation handling."
@@ -57,6 +57,10 @@ path = "examples/sensor_client.rs"
 [[example]]
 name = "sensor_memory"
 path = "examples/sensor_memory.rs"
+
+[[example]]
+name = "sensor_fullduplex"
+path = "examples/sensor_fullduplex.rs"
 
 [features]
 default            = ["logging"]

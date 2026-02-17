@@ -88,11 +88,11 @@
 // Submodules
 ////////////////////////////////////////
 
+mod broker;
 mod broker_builder;
 mod broker_mode;
 mod domain;
 mod retry;
-mod rpc_broker;
 mod transport;
 mod transport_builder;
 
@@ -103,10 +103,10 @@ mod error;
 // Public API
 ////////////////////////////////////////
 
+pub use broker::RpcBroker;
 pub use broker_builder::RpcBrokerBuilder;
 pub use broker_mode::BrokerMode;
-pub use retry::RetryConfig;
-pub use rpc_broker::RpcBroker;
+pub(crate) use retry::RetryConfig;
 pub use transport_builder::TransportBuilder;
 
 pub use correlation::CorrelationId;

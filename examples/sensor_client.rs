@@ -21,7 +21,6 @@ use common::{
 use mom_rpc::{
     // ---
     Result,
-    RetryConfig,
     RpcBrokerBuilder,
     TransportBuilder,
 };
@@ -54,12 +53,10 @@ async fn main() -> Result<()> {
     // - On timeout → returns TransportRetryable → retry kicks in
     // - Delay between retries: 200ms → 400ms → 800ms → 1000ms (capped)
     let client = RpcBrokerBuilder::new(transport.clone())
-        .retry(RetryConfig {
-            max_attempts: 20,
-            multiplier: 2.0,
-            initial_delay: Duration::from_millis(200),
-            max_delay: Duration::from_millis(1000),
-        })
+        .retry_max_attempts(20)
+        .retry_multiplier(2.)
+        .retry_initial_delay(Duration::from_millis(200))
+        .retry_max_delay(Duration::from_millis(1000))
         .request_timeout(Duration::from_millis(200))
         .build()?;
 

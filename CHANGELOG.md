@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
+---
+
+## [0.8.0] - 2026-02-18
+
+### Breaking Changes
+
+- **Unified API**: Replaced `RpcClient` and `RpcServer` with single `RpcBroker` type
+- **New builders**: Added `TransportBuilder` and `RpcBrokerBuilder` for configuration
+- Broker mode (client/server/full-duplex) now determined by transport configuration
+
+### Added
+
+- Built-in retry with exponential backoff
+  - Configure via `RpcBrokerBuilder` methods: `.retry_max_attempts()`, `.retry_initial_delay()`, etc.
+- Full-duplex mode via `.full_duplex()` - single broker acts as both client and server
+- `.request_timeout()` on `RpcBrokerBuilder` for global timeout configuration
+- `.request_to_with_timeout()` for per-request timeout override
+- `MemoryHub` for test isolation (testing API, subject to change)
+- Example: `sensor_fullduplex.rs` demonstrating full-duplex mode
+
+### Migration from 0.7.x
+
+**Before:**
+```rust
+let config = RpcConfig::with_broker("mqtt://localhost:1883", "node-id");
+let transport = create_transport(&config).await?;
+let server = RpcServer::with_transport(transport, "node-id");
+```
+
+**After:**
+```rust
+let transport = TransportBuilder::new()
+    .uri("mqtt://localhost:1883")
+    .node_id("node-id")
+    .server_mode()
+    .build().await?;
+let broker = RpcBrokerBuilder::new(transport).build()?;
+```
+
+---
+
 ## [0.7.6] - 2026-02-17
 
 ### Added
@@ -21,6 +62,8 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ### Fixed
 - Broker-based transport startup race where clients could publish before servers subscribe
+
+---
 
 ## [0.7.5] - unreleased
 
@@ -41,6 +84,8 @@ Early versions may include intentional refactors as semantics are clarified.
 ### Fixed
 - Fixed uninlined format args in DDS transport (clippy warning)
 - Fixed pre-publish script to detect untracked files
+
+---
 
 ## [0.7.4] - 2026-02-15
 

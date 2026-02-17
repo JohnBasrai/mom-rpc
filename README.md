@@ -73,46 +73,49 @@ Unlike RPC libraries that target a single broker, `mom-rpc` provides transport a
 Perfect for testing and single-process applications - no broker required:
 
 ```rust
-use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
-use serde::{Deserialize, Serialize};
+ use mom_rpc::{TransportBuilder, RpcBrokerBuilder, Result};
+ use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
-struct ReadTemperature { unit: TemperatureUnit }
+ #[derive(Debug, Serialize, Deserialize)]
+ struct ReadTemperature { unit: TemperatureUnit }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-enum TemperatureUnit { Celsius, Fahrenheit }
+ #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+ enum TemperatureUnit { Celsius, Fahrenheit }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
+ #[derive(Debug, Serialize, Deserialize)]
+ struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let config = RpcConfig::memory("sensor");
-    let transport = create_transport(&config).await?;
+ #[tokio::main]
+ async fn main() -> Result<()> {
+     //
+     let transport = TransportBuilder::new()
+         .uri("memory://")
+         .node_id("env-sensor-42")
+         .full_duplex()
+         .build()
+         .await?;
 
-    let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
-    server.register("read_temperature", |req: ReadTemperature| async move {
-        let celsius = 21.5_f32; // Simulate reading hw sensor
-        let (value, unit) = match req.unit {
-            TemperatureUnit::Celsius => (celsius, "C"),
-            TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
-        };
-        Ok(SensorReading { value, unit: unit.to_string(), timestamp_ms: 0 })
-    });
-    let _handle = server.spawn();
+     let server = RpcBrokerBuilder::new(transport.clone()).build()?;
+     server.register("read_temperature", |req: ReadTemperature| async move {
+         let celsius = 22.0_f32; // Simulate reading hw sensor
+         let (value, unit) = match req.unit {
+             TemperatureUnit::Celsius => (celsius, "C"),
+             TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
+         };
+         Ok(SensorReading { value, unit: unit.to_string(), timestamp_ms: 0 })
+     })?;
+     let _handle = server.spawn()?;
 
-    let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
-    let resp: SensorReading = client
-        .request_to(
-            "env-sensor-42",
-            "read_temperature",
-            ReadTemperature { unit: TemperatureUnit::Celsius },
-        )
-        .await?;
+     let client = RpcBrokerBuilder::new(transport).build()?;
+     let resp: SensorReading = client
+         .request_to("env-sensor-42", "read_temperature", ReadTemperature {
+             unit: TemperatureUnit::Celsius,
+         }).await?;
+     println!("Temperature: {} {}", resp.value, resp.unit);
 
-    println!("Temperature: {} {}", resp.value, resp.unit);
-    Ok(())
-}
+     Ok(())
+ }
+
 ```
 
 **Run it:**
@@ -128,36 +131,36 @@ cargo run --example sensor_memory
 <summary><b>Expected test output</b></summary>
 
 ```bash
-./scripts/manual-tests/amqp.sh transport_lapin
+./scripts/manual-tests/amqp.sh  transport_lapin
 ==> Checking prerequisites...
 ==> Starting RabbitMQ broker...
     Container: mom-rpc-test-rabbitmq
     AMQP port: 5672
     Management UI: http://localhost:15672 (guest/guest)
     Waiting for broker to be ready...
-    ✓ RabbitMQ broker ready
+..
+    ✓ RabbitMQ broker ready (took 5s)
 
 ==> Building examples with feature: transport_lapin
     ✓ Examples built successfully
 
 ==> Starting sensor_server...
-    Server PID: 784650
-    Waiting for server to initialize...
+    Server PID: 1484035
     ✓ Server running
 
 ==> Running sensor_client...
 
-✅ RabbitMQ integration test PASSED
+✅ AMQP integration test PASSED
 
 Feature tested: transport_lapin
 Broker URI: amqp://localhost:5672/%2f
 Output:
-Temperature: 21.5 C @ 1770741387954
-Humidity:    55 % @ 1770741387997
-Pressure:    101.3 kPa @ 1770741388039
+Temperature: 21.5 C @ 1771360006536
+Humidity:    55 % @ 1771360006580
+Pressure:    101.3 kPa @ 1771360006624
 
 ==> Cleaning up...
-Killing server (PID: 784650)...
+Killing server (PID: 1484035)...
 Stopping RabbitMQ container...
 ```
 </details>
@@ -169,155 +172,82 @@ For distributed deployments with an MQTT broker:
 **Cargo.toml:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.7", features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.8", features = ["transport_rumqttc"] }
 ```
 
-**Basic broker usage:**
-
+**Server:**
 ```rust
-// Server
-let config = RpcConfig::with_broker("mqtt://localhost:1883", "env-sensor-42");
-let transport = create_transport(&config).await?;
-let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
-server.register(
-    "read_temperature",
-    |req: ReadTemperature| async move { /* ... */ },
-);
-server.run().await?;
+use mom_rpc::{TransportBuilder, RpcBrokerBuilder, Result};
 
-// Client
-let config = RpcConfig::with_broker("mqtt://localhost:1883", "sensor-client");
-let transport = create_transport(&config).await?;
-let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
+let transport = TransportBuilder::new()
+    .uri("mqtt://localhost:1883")
+    .node_id("env-sensor-42")
+    .server_mode()
+    .build()
+    .await?;
+
+let server = RpcBrokerBuilder::new(transport.clone()).build()?;
+
+server.register("read_temperature", |req: ReadTemperature| async move {
+    let celsius = 21.5_f32;
+    let (value, unit) = match req.unit {
+        TemperatureUnit::Celsius => (celsius, "C"),
+        TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
+    };
+    Ok(SensorReading {
+        value,
+        unit: unit.to_string(),
+        timestamp_ms: current_time_ms(),
+    })
+})?;
+
+// Run blocks until shutdown
+server.run().await?;
+transport.close().await?;
+```
+
+**Client:**
+```rust
+use mom_rpc::{TransportBuilder, RpcBrokerBuilder, Result};
+use std::time::Duration;
+
+let transport = TransportBuilder::new()
+    .uri("mqtt://localhost:1883")
+    .node_id("sensor-client")
+    .client_mode()
+    .build()
+    .await?;
+
+let client = RpcBrokerBuilder::new(transport.clone())
+    .retry_max_attempts(10)
+    .retry_initial_delay(Duration::from_millis(100))
+    .request_timeout(Duration::from_millis(500))
+    .build()?;
+
 let resp: SensorReading = client
     .request_to(
         "env-sensor-42",
         "read_temperature",
-        ReadTemperature { unit: TemperatureUnit::Celsius },
+        ReadTemperature {
+            unit: TemperatureUnit::Celsius,
+        },
     )
     .await?;
+
+println!("Temperature: {} {}", resp.value, resp.unit);
+transport.close().await?;
 ```
 
-<details>
-<summary><b>View complete server with broker example</b></summary>
-
-```rust
-use mom_rpc::{create_transport, Result, RpcConfig, RpcServer};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ReadTemperature { unit: TemperatureUnit }
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-enum TemperatureUnit { Celsius, Fahrenheit }
-
-#[derive(Debug, Serialize, Deserialize)]
-struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
-
-#[tokio::main]
-async fn main() -> Result<()> {
-
-    env_logger::init();
-
-    let broker_uri = std::env::var("BROKER_URI")
-        .unwrap_or_else(|_| "mqtt://localhost:1883".to_string());
-
-    let config = RpcConfig::with_broker(&broker_uri, "env-sensor-42");
-    let transport = create_transport(&config).await?;
-
-    let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
-
-    server.register("read_temperature", |req: ReadTemperature| async move {
-        let celsius = 21.5_f32; // Simulate reading hw sensor
-        let (value, unit) = match req.unit {
-            TemperatureUnit::Celsius => (celsius, "C"),
-            TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
-        };
-        Ok(SensorReading {
-            value,
-            unit: unit.to_string(),
-            timestamp_ms: 0,
-        })
-    });
-
-    let server_clone = server.clone();
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to listen for Ctrl+C");
-        server_clone.shutdown().await.expect("shutdown failed");
-    });
-
-    server.run().await?;
-    transport.close().await
-}
-```
-
-</details>
-
-<details>
-<summary><b>View complete client with broker example</b></summary>
-
-```rust
-use mom_rpc::{create_transport, Result, RpcClient, RpcConfig};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ReadTemperature { unit: TemperatureUnit }
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-enum TemperatureUnit { Celsius, Fahrenheit }
-
-#[derive(Debug, Serialize, Deserialize)]
-struct SensorReading { value: f32, unit: String, timestamp_ms: u64 }
-
-#[tokio::main]
-async fn main() -> Result<()> {
-
-    env_logger::init();
-
-    let broker_uri = std::env::var("BROKER_URI")
-        .unwrap_or_else(|_| "mqtt://localhost:1883".to_string());
-
-    let config = RpcConfig::with_broker(&broker_uri, "sensor-client");
-    let transport = create_transport(&config).await?;
-
-    let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
-
-    let resp: SensorReading = client
-        .request_to(
-            "env-sensor-42",
-            "read_temperature",
-            ReadTemperature { unit: TemperatureUnit::Celsius },
-        )
-        .await?;
-
-    println!("Temperature: {} {} @ {}", resp.value, resp.unit, resp.timestamp_ms);
-    transport.close().await
-}
-```
-
-</details>
-
-**Run it:**
-```bash
-# Terminal 1: Start MQTT broker
-docker run -p 1883:1883 eclipse-mosquitto
-
-# Terminal 2: Start server
-cargo run --example sensor_server --features transport_rumqttc
-
-# Terminal 3: Send requests
-cargo run --example sensor_client --features transport_rumqttc
-```
-
-### Logging
-
-The `logging` feature (enabled by default) emits diagnostics using the [`tracing`](https://docs.rs/tracing) ecosystem.
-
-By default, logs are emitted at `INFO` level.
+See complete working examples:
+ - `examples/sensor_server.rs`
+ - `examples/sensor_client.rs`
+ - `examples/sensor_fullduplex.rs`
 
 ---
+
+## Logging
+
+By default, `mom-rpc` emits structured logs via the `tracing` crate.
 
 ### Reduce Verbosity
 
@@ -350,7 +280,7 @@ RUST_LOG=mom_rpc=debug
 RUST_LOG=debug
 
 # For specific module
-RUST_LOG=mom_rpc::client::retry=debug
+RUST_LOG=mom_rpc::retry=debug
 ```
 
 If you are using a transport backend, you can configure multiple modules:
@@ -367,7 +297,7 @@ Disable the `logging` feature:
 
 ```toml
 [dependencies]
-mom-rpc = { version = "0.7", default-features = false, features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.8", default-features = false, features = ["transport_rumqttc"] }
 ```
 
 `mom-rpc` does not install a global subscriber. The application is responsible for configuring `tracing`.
@@ -401,53 +331,63 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
 **You can enable multiple transports and choose at runtime:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.7", features = ["transport_rumqttc", "transport_lapin"] }
+mom-rpc = { version = "0.8", features = ["transport_rumqttc", "transport_lapin"] }
 ```
+
 ```rust
-// Choose transport based on configuration
-let transport = if use_mqtt {
-    let config = RpcConfig::with_broker("mqtt://...", "client-id");
-    create_transport_for("rumqttc", &config).await?
-} else {
-    let config = RpcConfig::with_broker("amqp://...", "client-id");
-    create_transport_for("lapin", &config).await?
-};
+// TransportBuilder automatically tries enabled transports in order
+let transport = TransportBuilder::new()
+    .uri(&broker_uri)         // e.g., "mqtt://localhost:1883" or "amqp://localhost:5672/%2f"
+    .node_id("client-id")
+    .transport_type("lapin")  // or "rumqttc"
+    .client_mode()
+    .build()
+    .await?;
 ```
+
+The builder tries transports in this order: `dust_dds` → `rumqttc` → `lapin` → `memory`. The first compatible transport succeeds. For explicit control, use `.transport_type("rumqttc")`.
+
 Applications can also run multiple transports concurrently (e.g., MQTT for IoT devices and AMQP for backend services) by creating separate transport instances.
 
-**Transport implementation sizes (as of v0.7.6):**
+**Transport implementation sizes (as of v0.8.0):**
 
 | Transport | Feature Flag         | SLOC | Use Case |
 |:----------|:---------------------|-----:|:---------|
-| In-memory | *(always available)* |   67 | Testing, single-process |
-| AMQP      | `transport_lapin`    |  310 | RabbitMQ, enterprise messaging |
-| MQTT      | `transport_rumqttc`  |  405 | IoT, lightweight pub/sub |
-| DDS       | `transport_dust_dds` |  694 | Real-time, mission-critical |
+| In-memory | *(always available)* |  103 | Testing, single-process |
+| AMQP      | `transport_lapin`    |  313 | RabbitMQ, enterprise messaging |
+| MQTT      | `transport_rumqttc`  |  404 | IoT, lightweight pub/sub |
+| DDS       | `transport_dust_dds` |  704 | Real-time, mission-critical |
 
 **Notes:**
- - *Core library, including In-memory: 819 lines*
- - *Total SLOC: 2,228 lines*
- - *Measured using `tokei` (crates.io methodology)*
+ - *Core library: 1350 lines, including In-memory.*
+ - *Total: 2770 lines.*
+ - *SLOC measured using `tokei` (crates.io methodology).*
 
-Example: An application using only the MQTT transport compiles 819 + 405 = 1224 lines of `mom-rpc` code.
-With both MQTT and AMQP enabled: 819 + 405 + 310 = 1534 lines.
+Example: An application using only the MQTT transport compiles 1350 + 404 = 1754 lines of `mom-rpc` code.
+With both MQTT and AMQP enabled: 1350 + 404 + 313 = 2067 lines.
 
 ---
 
-## Timeout Handling
+## Overriding Default Timeout
 
-Use the built-in `request_with_timeout` method for convenient timeout handling:
+Configure timeouts per-request or at the broker level:
 
 ```rust
 use std::time::Duration;
 
-// Recommended: built-in timeout method
+
+// Configure default timeout on the broker
+let client = RpcBrokerBuilder::new(transport)
+    .request_timeout(Duration::from_secs(5)) // global default timeout.
+    .build()?;
+
+// Per-request timeout (overrides the broker default)
 let response: MyResponse = client
-    .request_with_timeout(
+    .request_to_with_timeout(
         "service",
         "method",
         request,
-        Duration::from_secs(5),
+        Duration::from_millis(1500),
     )
     .await?;
 
@@ -458,19 +398,31 @@ let response: MyResponse = client
 
 ## Full-Duplex Applications
 
-For applications that both send and receive RPC calls (like device↔agent communication), share a single transport between client and server:
+For applications that both send and receive RPC calls (like device↔agent communication), use full-duplex mode:
+
 ```rust
-let transport = create_transport(&config).await?;
+use mom_rpc::{TransportBuilder, RpcBrokerBuilder, Result};
 
-// Server receives calls
-let server = RpcServer::with_transport(transport.clone(), "device-123");
-server.register("get_status", |req| async { /* ... */ });
+let transport = TransportBuilder::new()
+    .uri(&broker_uri)
+    .node_id("device-123")
+    .full_duplex()  // ← Both request and response queues
+    .build()
+    .await?;
 
-// Client makes calls
-let client = RpcClient::with_transport(transport.clone(), "device-123-client").await?;
+let broker = RpcBrokerBuilder::new(transport).build()?;
+
+// Register handlers (acts as server)
+broker.register("read-status", |req| async move {
+    Ok(StatusResponse { /* ... */ })
+})?;
+broker.spawn()?;
+
+// Make requests (acts as client)
+let resp = broker.request_to("device-123", "read-status", req).await?;
 ```
 
-See [rust-edge-agent](https://github.com/JohnBasrai/rust-edge-agent/blob/main/src/agent/run.rs) for a complete example.
+See `examples/sensor_fullduplex.rs` for a complete full-duplex example, and [rust-edge-agent](https://github.com/JohnBasrai/rust-edge-agent/blob/main/src/agent/run.rs) for production usage.
 
 ---
 
@@ -514,10 +466,9 @@ Applications requiring exactly-once effects must ensure idempotency or implement
 
 **Broker-based transports (MQTT, AMQP):**
 Due to the star topology, there's a potential race condition during startup where
-clients may publish before servers have subscribed. Current mitigation: manual
-delays in test scripts. Additionally, the broker represents both a single point
-of failure and a serialization bottleneck. See Issue [Add retry-with-backoff to handle transport startup races #49](https://github.com/JohnBasrai/mom-rpc/issues/49) for proposed solutions
-including retry with exponential backoff.
+clients may publish before servers have subscribed. The unified broker API (0.8+) includes
+built-in retry with exponential backoff to handle these races gracefully. Configure via
+`RpcBrokerBuilder::retry_max_attempts()` and related methods.
 
 **Peer-to-peer transports (DDS):**
 Direct peer-to-peer discovery eliminates the startup race through explicit
@@ -558,7 +509,7 @@ This library does not handle authentication. Delegate to:
 - [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.7.6)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases)
 
 ---
 
