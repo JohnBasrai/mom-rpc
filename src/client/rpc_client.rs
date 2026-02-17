@@ -270,11 +270,28 @@ impl RpcClient {
 
         self.inner.transport.publish(env).await?;
 
-        let response = rx.await.map_err(|err| {
-            let msg =
-                format!("response channel closed (server dropped or transport shutdown:{err:?})");
-            RpcError::Transport(msg)
-        })?;
+        let timeout = self.inner.config.request_timeout;
+        let has_retry = self.inner.config.retry_config.is_some();
+
+        let response = time::timeout(timeout, rx)
+            .await
+            .map_err(|_| {
+                if has_retry {
+                    // With retry: return retryable error to trigger retry
+                    RpcError::TransportRetryable(
+                        "request timeout waiting for response, will retry".into(),
+                    )
+                } else {
+                    // Without retry: return terminal timeout error
+                    RpcError::Timeout
+                }
+            })?
+            .map_err(|err| {
+                let msg = format!(
+                    "response channel closed (server dropped or transport shutdown:{err:?})"
+                );
+                RpcError::Transport(msg)
+            })?;
 
         Ok(response)
     }

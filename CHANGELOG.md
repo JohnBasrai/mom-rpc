@@ -5,7 +5,24 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
-## [0.7.5] - 2026-02-17
+## [0.7.6] - 2026-02-17
+
+### Added
+- **Retry with exponential backoff** to handle transient transport failures and startup race conditions (#49)
+  - New `RetryConfig` struct with configurable retry behavior
+  - `RpcConfig::with_retry()` builder method to enable automatic retry
+  - `RpcConfig::with_request_timeout()` to configure per-attempt timeout (default: 30s)
+  - `RpcError::TransportRetryable` variant for errors that should trigger retry
+  - Request timeout on client response waiting
+
+### Changed
+- **BREAKING:** `RpcClient::with_transport()` now requires `RpcConfig` parameter
+  - Migration: `RpcClient::with_transport(transport, "client-1", config.clone()).await?`
+
+### Fixed
+- Broker-based transport startup race where clients could publish before servers subscribe
+
+## [0.7.5] - unreleased
 
 ### Added
 - Usage example to `SubscriptionHandle` showing how to read from inbox

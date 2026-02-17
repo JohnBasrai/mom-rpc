@@ -99,16 +99,31 @@ docker run -d \
     >/dev/null
 
 echo "    Waiting for broker to be ready..."
-sleep 5
+sleep 1  # Give container initial startup time
 
-# Verify broker is accessible
-if ! docker exec "$CONTAINER_NAME" rabbitmqctl status >/dev/null 2>&1; then
-    echo "Error: RabbitMQ broker failed to start properly"
-    docker logs "$CONTAINER_NAME"
-    exit 1
-fi
+# Retry loop for broker startup (up to 30 seconds)
+MAX_ATTEMPTS=28
+ATTEMPT=1
+while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+    if docker exec "$CONTAINER_NAME" rabbitmqctl status >/dev/null 2>&1; then
+        if [ $ATTEMPT -gt 1 ]; then
+            echo  # Newline after dots
+        fi
+        echo "    ✓ RabbitMQ broker ready (took $((ATTEMPT + 2))s)"
+        break
+    fi
 
-echo "    ✓ RabbitMQ broker ready"
+    if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+        echo
+        echo "Error: RabbitMQ broker failed to start after $((MAX_ATTEMPTS + 2)) seconds"
+        docker logs "$CONTAINER_NAME"
+        exit 1
+    fi
+
+    sleep 1
+    echo -n "."
+    ATTEMPT=$((ATTEMPT + 1))
+done
 
 # ---
 
@@ -141,8 +156,6 @@ cargo run --quiet --example sensor_server --features "$FEATURE" > server.log 2>&
 SERVER_PID=$!
 
 echo "    Server PID: $SERVER_PID"
-echo "    Waiting for server to initialize..."
-sleep 3
 
 # Check if server is still running
 if ! kill -0 "$SERVER_PID" 2>/dev/null; then

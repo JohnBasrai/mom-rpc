@@ -93,6 +93,14 @@ pub struct RpcConfig {
     /// When configured, RPC requests will automatically retry on
     /// retryable transport errors using exponential backoff.
     pub retry_config: Option<RetryConfig>,
+
+    /// Timeout for waiting on response from server on each attempt.
+    ///
+    /// This is the timeout for receiving a response after publishing a request.
+    /// If retry is enabled, this timeout applies to each retry attempt independently.
+    ///
+    /// Default: 30 seconds
+    pub request_timeout: Duration,
 }
 
 impl RpcConfig {
@@ -107,6 +115,7 @@ impl RpcConfig {
             request_queue_name: None,
             response_queue_name: None,
             retry_config: None,
+            request_timeout: Duration::from_secs(30),
         }
     }
 
@@ -119,6 +128,7 @@ impl RpcConfig {
             request_queue_name: None,
             response_queue_name: None,
             retry_config: None,
+            request_timeout: Duration::from_secs(30),
         }
     }
 
@@ -156,6 +166,28 @@ impl RpcConfig {
     /// ```
     pub fn with_retry(mut self, config: RetryConfig) -> Self {
         self.retry_config = Some(config);
+        self
+    }
+
+    /// Set the request timeout per attempt.
+    ///
+    /// This is how long to wait for a response on each request attempt.
+    /// When combined with retry, the total request time is:
+    ///   (request_timeout × max_attempts) + backoff delays
+    ///
+    /// Default: 30 seconds
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mom_rpc::RpcConfig;
+    /// use std::time::Duration;
+    ///
+    /// let config = RpcConfig::with_broker("mqtt://localhost:1883", "client")
+    ///     .with_request_timeout(Duration::from_secs(10));
+    /// ```
+    pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
         self
     }
 }
