@@ -1,8 +1,9 @@
-//! Retry logic with exponential backoff.
+//! Retry configuration and exponential backoff logic.
 //!
-//! This module provides the [`retry_with_backoff`] helper function used by
-//! [`RpcClient`](crate::RpcClient) to handle transient failures in broker-based
-//! transports where servers may not be subscribed when requests are published.
+//! This module provides the [`RetryConfig`] type and the [`retry_with_backoff`]
+//! helper used by [`RpcBroker`](crate::RpcBroker) to handle transient failures
+//! in broker-based transports where servers may not be subscribed when requests
+//! are published.
 //!
 //! # Retry Strategy
 //!
@@ -13,15 +14,70 @@
 
 use std::collections::hash_map::RandomState;
 use std::future::Future;
-use std::hash::{BuildHasher, Hash};
+use std::hash::BuildHasher;
 use std::time::Duration;
 use tokio::time::sleep;
 
+/// Retry configuration with exponential backoff.
+///
+/// Configures automatic retry behavior for handling transient failures
+/// in broker-based transports (MQTT, AMQP) where servers may not be
+/// subscribed when clients publish requests.
+///
+/// # Example
+///
+/// ```
+/// use mom_rpc::RetryConfig;
+/// use std::time::Duration;
+///
+/// let retry_config = RetryConfig {
+///     max_attempts: 5,
+///     multiplier: 2.0,
+///     initial_delay: Duration::from_millis(100),
+///     max_delay: Duration::from_secs(10),
+/// };
+/// ```
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    /// Maximum number of retry attempts (0 = no retries, just the initial attempt).
+    pub max_attempts: u32,
+
+    /// Backoff multiplier applied to the delay after each retry.
+    ///
+    /// Example: 2.0 doubles the delay each time (exponential backoff).
+    pub multiplier: f32,
+
+    /// Initial delay before the first retry.
+    pub initial_delay: Duration,
+
+    /// Maximum delay between retry attempts (caps exponential growth).
+    pub max_delay: Duration,
+}
+
+impl Default for RetryConfig {
+    /// Reasonable default retry configuration.
+    ///
+    /// - `max_attempts`: 3
+    /// - `multiplier`: 2.0 (exponential backoff)
+    /// - `initial_delay`: 100ms
+    /// - `max_delay`: 5s
+    fn default() -> Self {
+        // ---
+        Self {
+            max_attempts: 3,
+            multiplier: 2.0,
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(5),
+        }
+    }
+}
+
 /// Retry an async operation with exponential backoff.
 ///
-/// This function executes the provided operation and retries it according to the
-/// retry configuration if it fails with a retryable error. Non-retryable errors
-/// cause immediate failure.
+/// Executes the provided operation and retries it according to the retry
+/// configuration if it fails with a retryable error. Non-retryable errors
+/// cause immediate failure. If `retry_config` is `None`, the operation
+/// executes exactly once.
 ///
 /// # Backoff Algorithm
 ///
@@ -31,7 +87,7 @@ use tokio::time::sleep;
 ///
 /// # Arguments
 ///
-/// - `config`: RPC configuration containing optional retry settings
+/// - `retry_config`: Optional retry settings; `None` means no retries
 /// - `operation`: Async closure that returns `Result<T>`
 ///
 /// # Returns
@@ -42,19 +98,19 @@ use tokio::time::sleep;
 /// # Example
 ///
 /// ```ignore
-/// let result = retry_with_backoff(&config, || async {
-///     client.request_to("server", "method", req).await
+/// let result = retry_with_backoff(broker.retry_config(), || async {
+///     inner_request(...).await
 /// }).await?;
 /// ```
 pub(crate) async fn retry_with_backoff<F, Fut, T>(
-    config: &crate::RpcConfig,
+    retry_config: Option<&RetryConfig>,
     mut operation: F,
 ) -> crate::Result<T>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = crate::Result<T>>,
 {
-    let retry_config = match &config.retry_config {
+    let retry_config = match retry_config {
         Some(cfg) => cfg,
         None => {
             // No retry configured, just execute once
@@ -112,13 +168,8 @@ where
 ///
 /// Uses a simple multiplicative jitter: `delay * (0.75 + random(0.0..0.5))`
 fn apply_jitter(delay: Duration) -> Duration {
-    // Generate pseudo-random value using thread-local randomness
-    // We use RandomState which is cheap and good enough for jitter
+    // ---
     let random_state = RandomState::new();
-    let mut hasher = random_state.build_hasher();
-
-    // Hash current time for randomness
-    std::time::SystemTime::now().hash(&mut hasher);
     let hash = random_state.hash_one(std::time::SystemTime::now());
 
     // Convert to 0.0..1.0 range
@@ -133,24 +184,19 @@ fn apply_jitter(delay: Duration) -> Duration {
 
 #[cfg(test)]
 mod tests {
+    // ---
     use super::*;
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
-    /// Helper to create a test RpcConfig with retry settings
-    fn test_config(retry_config: crate::RetryConfig) -> crate::RpcConfig {
-        let mut config = crate::RpcConfig::memory("test-client");
-        config.retry_config = Some(retry_config);
-        config
-    }
-
     #[tokio::test]
     async fn test_no_retry_on_success() {
-        let config = test_config(crate::RetryConfig::default());
+        // ---
+        let config = RetryConfig::default();
         let call_count = Arc::new(Mutex::new(0));
         let call_count_clone = call_count.clone();
 
-        let result = retry_with_backoff(&config, || {
+        let result = retry_with_backoff(Some(&config), || {
             let count = call_count_clone.clone();
             async move {
                 let mut c = count.lock().unwrap();
@@ -165,18 +211,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_none_config_executes_once() {
+        // ---
+        let call_count = Arc::new(Mutex::new(0));
+        let call_count_clone = call_count.clone();
+
+        let result = retry_with_backoff(None, || {
+            let count = call_count_clone.clone();
+            async move {
+                let mut c = count.lock().unwrap();
+                *c += 1;
+                Err::<i32, _>(crate::RpcError::TransportRetryable("fail".into()))
+            }
+        })
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(crate::RpcError::TransportRetryable(_))
+        ));
+        assert_eq!(*call_count.lock().unwrap(), 1);
+    }
+
+    #[tokio::test]
     async fn test_retry_on_retryable_error() {
-        let retry_config = crate::RetryConfig {
+        // ---
+        let retry_config = RetryConfig {
             max_attempts: 3,
             multiplier: 2.0,
             initial_delay: Duration::from_millis(10),
             max_delay: Duration::from_millis(100),
         };
-        let config = test_config(retry_config);
         let call_count = Arc::new(Mutex::new(0));
         let call_count_clone = call_count.clone();
 
-        let result = retry_with_backoff(&config, || {
+        let result = retry_with_backoff(Some(&retry_config), || {
             let count = call_count_clone.clone();
             async move {
                 let mut c = count.lock().unwrap();
@@ -201,17 +270,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_exhaustion() {
-        let retry_config = crate::RetryConfig {
+        // ---
+        let retry_config = RetryConfig {
             max_attempts: 2,
             multiplier: 2.0,
             initial_delay: Duration::from_millis(10),
             max_delay: Duration::from_millis(100),
         };
-        let config = test_config(retry_config);
         let call_count = Arc::new(Mutex::new(0));
         let call_count_clone = call_count.clone();
 
-        let result = retry_with_backoff(&config, || {
+        let result = retry_with_backoff(Some(&retry_config), || {
             let count = call_count_clone.clone();
             async move {
                 let mut c = count.lock().unwrap();
@@ -232,11 +301,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_no_retry_on_non_retryable_error() {
-        let config = test_config(crate::RetryConfig::default());
+        // ---
+        let config = RetryConfig::default();
         let call_count = Arc::new(Mutex::new(0));
         let call_count_clone = call_count.clone();
 
-        let result = retry_with_backoff(&config, || {
+        let result = retry_with_backoff(Some(&config), || {
             let count = call_count_clone.clone();
             async move {
                 let mut c = count.lock().unwrap();
@@ -253,16 +323,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_exponential_backoff_timing() {
-        let retry_config = crate::RetryConfig {
+        // ---
+        let retry_config = RetryConfig {
             max_attempts: 3,
             multiplier: 2.0,
             initial_delay: Duration::from_millis(50),
             max_delay: Duration::from_millis(500),
         };
-        let config = test_config(retry_config);
         let start = Instant::now();
 
-        let _result = retry_with_backoff(&config, || async {
+        let _result = retry_with_backoff(Some(&retry_config), || async {
             Err::<i32, _>(crate::RpcError::TransportRetryable("test".into()))
         })
         .await;
@@ -274,7 +344,6 @@ mod tests {
         // Attempt 2: 100ms * (0.75..1.25) = 75ms..125ms
         // Attempt 3: 200ms * (0.75..1.25) = 150ms..250ms
         // Total min: ~262ms, Total max: ~437ms
-
         assert!(
             elapsed >= Duration::from_millis(200),
             "elapsed too short: {elapsed:?}",
@@ -287,16 +356,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_max_delay_cap() {
-        let retry_config = crate::RetryConfig {
+        // ---
+        let retry_config = RetryConfig {
             max_attempts: 5,
             multiplier: 10.0, // Aggressive multiplier
             initial_delay: Duration::from_millis(10),
             max_delay: Duration::from_millis(50), // Low cap
         };
-        let config = test_config(retry_config);
         let start = Instant::now();
 
-        let _result = retry_with_backoff(&config, || async {
+        let _result = retry_with_backoff(Some(&retry_config), || async {
             Err::<i32, _>(crate::RpcError::TransportRetryable("test".into()))
         })
         .await;
@@ -314,6 +383,7 @@ mod tests {
 
     #[test]
     fn test_jitter_range() {
+        // ---
         let delay = Duration::from_millis(100);
 
         // Test multiple times to ensure jitter stays in range

@@ -46,7 +46,7 @@
 //! - `exclusive: false` - Multiple consumers allowed
 //!
 //! Queue names are derived from `transport_id` unless custom names are
-//! provided via `RpcConfig::request_queue_name` or `response_queue_name`.
+//! provided via `TransportConfig::request_queue` or `response_queue`.
 //!
 //! ## Scope and limitations
 //!
@@ -87,11 +87,12 @@ use crate::{
     log_info,
     Envelope,
     Result,
-    RpcConfig,
     RpcError,
     Subscription,
     SubscriptionHandle,
     Transport,
+    TransportBase,
+    TransportConfig,
     TransportPtr,
 };
 
@@ -129,7 +130,7 @@ enum ActorStep {
 /// `Send + Sync` for use across async boundaries.
 pub struct AmqpTransport {
     // ---
-    transport_id: String,
+    base: TransportBase,
     cmd_tx: mpsc::Sender<Cmd>,
     subscribers: SubscriberMap,
     tasks: TaskList,
@@ -139,9 +140,9 @@ impl AmqpTransport {
     /// Creates a new AMQP transport with the given connection and channel.
     ///
     /// Spawns a background actor task to handle AMQP operations.
-    fn create(transport_id: &str, connection: Connection, channel: Channel) -> TransportPtr {
+    fn create(base: TransportBase, connection: Connection, channel: Channel) -> TransportPtr {
         // ---
-        let transport_id = transport_id.to_string();
+        let transport_id = base.transport_id.clone();
 
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         let subscribers: SubscriberMap = Arc::new(RwLock::new(HashMap::new()));
@@ -168,7 +169,7 @@ impl AmqpTransport {
         }
 
         Arc::new(Self {
-            transport_id,
+            base,
             cmd_tx,
             subscribers,
             tasks,
@@ -361,8 +362,8 @@ impl Actor {
 #[async_trait::async_trait]
 impl Transport for AmqpTransport {
     // ---
-    fn transport_id(&self) -> &str {
-        &self.transport_id
+    fn base(&self) -> &TransportBase {
+        &self.base
     }
 
     async fn publish(&self, env: Envelope) -> Result<()> {
@@ -443,25 +444,27 @@ impl Transport for AmqpTransport {
 /// # Connection Behavior
 ///
 /// The connection to the broker happens immediately during transport creation.
-pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
+pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
     // ---
 
-    let (connection, channel) = create_amqp_connection(config).await?;
+    let (connection, channel) = create_amqp_connection(&config).await?;
     Ok(AmqpTransport::create(
-        &config.transport_id,
+        TransportBase::from(&config),
         connection,
         channel,
     ))
 }
 
 /// Creates an AMQP connection and channel from the given configuration.
-async fn create_amqp_connection(config: &RpcConfig) -> Result<(Connection, Channel)> {
+async fn create_amqp_connection(config: &TransportConfig) -> Result<(Connection, Channel)> {
     // ---
 
-    let uri = config
-        .transport_uri
-        .as_deref()
-        .ok_or_else(|| RpcError::Transport("AMQP transport requires transport_uri".to_string()))?;
+    let uri = &config.uri;
+    if uri.is_empty() {
+        return Err(RpcError::Transport(
+            "AMQP transport requires URI".to_string(),
+        ));
+    }
 
     log_info!("Connecting to AMQP broker: {uri}");
 

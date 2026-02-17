@@ -55,4 +55,20 @@ pub enum RpcError {
     /// A request was missing a response address or `reply-to` field.
     #[error("missing response topic")]
     MissingResponseTopic,
+
+    /// Operation not allowed in current broker mode.
+    ///
+    /// For example, calling `request_to()` in Server mode or `register()` in Client mode.
+    #[error("invalid mode: {0}")]
+    InvalidMode(String),
+
+    /// Required configuration parameter is missing.
+    #[error("missing required config: {0}")]
+    MissingConfig(String),
+
+    /// Configuration conflict detected.
+    ///
+    /// For example, using both explicit queue names and mode sugar methods.
+    #[error("configuration conflict: {0}")]
+    ConfigConflict(String),
 }

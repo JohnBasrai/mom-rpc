@@ -21,6 +21,105 @@ use std::sync::Arc;
 use bytes::Bytes;
 use tokio::sync::mpsc;
 
+/// Operational mode of a transport.
+///
+/// Determines which queues the transport subscribes to and which
+/// RPC operations are valid on the resulting broker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransportMode {
+    /// Subscribes to response queue only. Supports `request_to()`.
+    Client,
+    /// Subscribes to request queue only. Supports `register()`, `spawn()`, `run()`.
+    Server,
+    /// Subscribes to both queues. Supports all operations.
+    FullDuplex,
+}
+
+/// Shared base state for all transport implementations.
+///
+/// Embeds common fields so that default `Transport` trait implementations
+/// can delegate to this struct rather than repeating logic in each transport.
+///
+/// # Usage
+///
+/// Each concrete transport embeds this as a field named `base`:
+///
+/// ```ignore
+/// struct MqttTransport {
+///     base: TransportBase,
+///     // ... mqtt specific fields
+/// }
+///
+/// impl Transport for MqttTransport {
+///     fn base(&self) -> &TransportBase { &self.base }
+/// }
+/// ```
+pub struct TransportBase {
+    /// Unique identifier for this transport instance (the node_id).
+    pub transport_id: String,
+    /// Operational mode of this transport.
+    pub mode: TransportMode,
+    /// Request queue name (set for Server and FullDuplex modes).
+    pub request_queue: Option<String>,
+    /// Response queue name (set for Client and FullDuplex modes).
+    pub response_queue: Option<String>,
+}
+
+impl TransportBase {
+    /// Create a new TransportBase.
+    pub fn new(
+        transport_id: impl Into<String>,
+        mode: TransportMode,
+        request_queue: Option<String>,
+        response_queue: Option<String>,
+    ) -> Self {
+        Self {
+            transport_id: transport_id.into(),
+            mode,
+            request_queue,
+            response_queue,
+        }
+    }
+}
+
+impl From<&TransportConfig> for TransportBase {
+    /// Construct a `TransportBase` from a `TransportConfig` reference.
+    ///
+    /// Clones only the fields needed by `TransportBase`, leaving `config`
+    /// available for transport-specific use (URI, keep-alive, etc.).
+    fn from(config: &TransportConfig) -> Self {
+        // ---
+        Self {
+            transport_id: config.node_id.clone(),
+            mode: config.mode,
+            request_queue: config.request_queue.clone(),
+            response_queue: config.response_queue.clone(),
+        }
+    }
+}
+
+/// Configuration for creating a transport instance.
+///
+/// Passed to transport factory functions (`create_*_transport()`).
+#[derive(Clone, Debug)]
+pub struct TransportConfig {
+    /// Broker URI (e.g. `"mqtt://localhost:1883"`, `"amqp://localhost:5672/%2f"`)
+    pub uri: String,
+    /// Node ID for this transport instance.
+    pub node_id: String,
+    /// Operational mode.
+    pub mode: TransportMode,
+    /// Request queue name (required for Server and FullDuplex modes).
+    pub request_queue: Option<String>,
+    /// Response queue name (required for Client and FullDuplex modes).
+    pub response_queue: Option<String>,
+    /// Optional transport type override (e.g. `"rumqttc"`, `"lapin"`, `"dust-dds"`).
+    /// If `None`, uses feature-flag driven selection.
+    pub transport_type: Option<String>,
+    /// Broker keep-alive interval in seconds.
+    pub keep_alive_secs: Option<u16>,
+}
+
 /// A transport address.
 ///
 /// An `Address` represents a destination to which messages may be published.
@@ -224,10 +323,13 @@ impl Envelope {
 /// # Example
 ///
 /// ```no_run
-/// # use mom_rpc::{create_memory_transport, RpcConfig, Subscription};
+/// # use mom_rpc::{create_memory_transport, TransportConfig, TransportMode, Subscription};
 /// # async fn example() -> mom_rpc::Result<()> {
-/// # let config = RpcConfig::memory("app");
-/// # let transport = create_memory_transport(&config).await?;
+/// # let config = TransportConfig {
+/// #     uri: String::new(), node_id: "app".into(), mode: TransportMode::FullDuplex,
+/// #     request_queue: None, response_queue: None, transport_type: None, keep_alive_secs: None,
+/// # };
+/// # let transport = create_memory_transport(config).await?;
 /// #
 /// let subscription = Subscription::from("notifications");
 /// let mut handle = transport.subscribe(subscription).await?;
@@ -266,7 +368,6 @@ pub struct SubscriptionHandle {
 /// # Available Implementations
 ///
 /// - [`crate::create_memory_transport`] - In-memory transport (always available)
-/// - [`crate::create_transport`] - Creates a transport based on the enabled features.
 ///
 /// # Notes
 ///
@@ -277,8 +378,25 @@ pub struct SubscriptionHandle {
 #[allow(dead_code)]
 pub trait Transport: Send + Sync {
     // ---
+    /// Returns a reference to the shared base state.
+    ///
+    /// Required method - each concrete transport must implement this
+    /// by returning `&self.base`.
+    fn base(&self) -> &TransportBase;
+
     /// Returns the transport_id of the transport.
-    fn transport_id(&self) -> &str;
+    ///
+    /// Default implementation delegates to `base()`.
+    fn transport_id(&self) -> &str {
+        &self.base().transport_id
+    }
+
+    /// Returns the operational mode of the transport.
+    ///
+    /// Default implementation delegates to `base()`.
+    fn mode(&self) -> TransportMode {
+        self.base().mode
+    }
 
     /// Publish an envelope to the given address.
     ///
@@ -298,7 +416,5 @@ pub trait Transport: Send + Sync {
 /// This is an `Arc<dyn Transport>`, which means:
 /// - `.clone()` is cheap (only increments a reference count)
 /// - Multiple clones share the same underlying connection
-/// - Safe to share between `RpcClient` and `RpcServer`
-///
 /// Used to erase concrete transport types behind a stable domain interface.
 pub type TransportPtr = Arc<dyn Transport>;

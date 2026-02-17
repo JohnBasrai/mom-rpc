@@ -13,7 +13,7 @@
 mod common;
 
 use common::{ReadHumidity, ReadPressure, ReadTemperature, SensorReading, TemperatureUnit};
-use mom_rpc::{create_transport, Result, RpcConfig, RpcServer};
+use mom_rpc::{Result, RpcBrokerBuilder, TransportBuilder};
 use tracing_subscriber::{fmt as tracing_format, EnvFilter};
 
 #[tokio::main]
@@ -29,10 +29,14 @@ async fn main() -> Result<()> {
     let broker_uri =
         std::env::var("BROKER_URI").unwrap_or_else(|_| "mqtt://localhost:1883".to_string());
 
-    let config = RpcConfig::with_broker(&broker_uri, "env-sensor-42");
-    let transport = create_transport(&config).await?;
+    let transport = TransportBuilder::new()
+        .uri(&broker_uri)
+        .node_id("env-sensor-42")
+        .server_mode()
+        .build()
+        .await?;
 
-    let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
+    let server = RpcBrokerBuilder::new(transport.clone()).build()?;
 
     server.register("read_temperature", |req: ReadTemperature| async move {
         // ---
@@ -46,7 +50,7 @@ async fn main() -> Result<()> {
             unit: unit.to_string(),
             timestamp_ms: current_time_ms(),
         })
-    });
+    })?;
 
     server.register("read_humidity", |_req: ReadHumidity| async move {
         // ---
@@ -55,7 +59,7 @@ async fn main() -> Result<()> {
             unit: "%".to_string(),
             timestamp_ms: current_time_ms(),
         })
-    });
+    })?;
 
     server.register("read_pressure", |_req: ReadPressure| async move {
         // ---
@@ -64,18 +68,17 @@ async fn main() -> Result<()> {
             unit: "kPa".to_string(),
             timestamp_ms: current_time_ms(),
         })
-    });
+    })?;
 
     println!("sensor_server listening as node_id=env-sensor-42");
 
-    // Shutdown on Ctrl+C
-    let server_clone = server.clone();
+    let broker_clone = server.clone();
     let transport_clone = transport.clone();
     tokio::spawn(async move {
         tokio::signal::ctrl_c()
             .await
             .expect("failed to listen for Ctrl+C");
-        server_clone.shutdown().await.expect("shutdown failed");
+        broker_clone.shutdown().await;
         transport_clone
             .close()
             .await

@@ -9,3 +9,12 @@ mod rumqttc;
 
 #[cfg(feature = "transport_rumqttc")]
 pub use rumqttc::create_transport as create_rumqttc_transport;
+
+#[cfg(not(feature = "transport_rumqttc"))]
+pub async fn create_rumqttc_transport(
+    _config: crate::TransportConfig,
+) -> crate::Result<crate::TransportPtr> {
+    Err(crate::RpcError::Transport(
+        "transport_rumqttc feature is not enabled".into(),
+    ))
+}

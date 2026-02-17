@@ -1,7 +1,7 @@
 //! Sensor RPC example using in-memory transport.
 //!
-//! Demonstrates both client and server in a single process using MemoryTransport.
-//! This is useful for tests, simulations, and single-process applications.
+//! Demonstrates both client and server in a single process using the unified
+//! `RpcBroker` API with full-duplex mode.
 //!
 //! Run with: cargo run --example sensor_memory
 
@@ -11,7 +11,7 @@
 mod common;
 
 use common::{ReadHumidity, ReadPressure, ReadTemperature, SensorReading, TemperatureUnit};
-use mom_rpc::{create_transport, Result, RpcClient, RpcConfig, RpcServer};
+use mom_rpc::{Result, RpcBrokerBuilder, TransportBuilder};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -24,10 +24,14 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .init();
 
-    let config = RpcConfig::memory("sensor");
-    let transport = create_transport(&config).await?;
+    let transport = TransportBuilder::new()
+        .uri("memory://")
+        .node_id("env-sensor-42")
+        .full_duplex()
+        .build()
+        .await?;
 
-    let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
+    let server = RpcBrokerBuilder::new(transport.clone()).build()?;
 
     server.register("read_temperature", |req: ReadTemperature| async move {
         // ---
@@ -41,7 +45,7 @@ async fn main() -> Result<()> {
             unit: unit.to_string(),
             timestamp_ms: current_time_ms(),
         })
-    });
+    })?;
 
     server.register("read_humidity", |_req: ReadHumidity| async move {
         // ---
@@ -50,7 +54,7 @@ async fn main() -> Result<()> {
             unit: "%".to_string(),
             timestamp_ms: current_time_ms(),
         })
-    });
+    })?;
 
     server.register("read_pressure", |_req: ReadPressure| async move {
         // ---
@@ -59,12 +63,11 @@ async fn main() -> Result<()> {
             unit: "kPa".to_string(),
             timestamp_ms: current_time_ms(),
         })
-    });
+    })?;
 
-    // Spawn server in background so we can use the main task for client
-    let _handle = server.spawn();
+    let _handle = server.clone().spawn()?;
 
-    let client = RpcClient::with_transport(transport.clone(), "client-1", config).await?;
+    let client = RpcBrokerBuilder::new(transport.clone()).build()?;
 
     let temp: SensorReading = client
         .request_to(
@@ -97,8 +100,7 @@ async fn main() -> Result<()> {
         pressure.value, pressure.unit, pressure.timestamp_ms
     );
 
-    // Clean shutdown
-    server.shutdown().await?;
+    server.shutdown().await;
     transport.close().await?;
     Ok(())
 }

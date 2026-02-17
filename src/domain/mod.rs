@@ -18,5 +18,8 @@ pub use transport::{
     Subscription,
     SubscriptionHandle,
     Transport,
+    TransportBase,
+    TransportConfig,
+    TransportMode,
     TransportPtr,
 };
