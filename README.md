@@ -343,7 +343,14 @@ fmt()
 You can control logging dynamically via the `RUST_LOG` environment variable:
 
 ```bash
+# For just mom-rpc debug logs
 RUST_LOG=mom_rpc=debug
+
+# For all debug logs
+RUST_LOG=debug
+
+# For specific module
+RUST_LOG=mom_rpc::client::retry=debug
 ```
 
 If you are using a transport backend, you can configure multiple modules:

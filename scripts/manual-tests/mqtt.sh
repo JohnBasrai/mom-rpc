@@ -13,6 +13,7 @@ FEATURE="${1:-}"
 CONTAINER_NAME="mom-rpc-test-mosquitto"
 MQTT_PORT=1883
 BROKER_URI="mqtt://localhost:${MQTT_PORT}"
+: ${CLEAN_LOGS:=yes}
 : "${FEATURE:=transport_rumqttc}"
 # ---
 
@@ -73,7 +74,9 @@ cleanup() {
     fi
     
     # Remove temp files
-    rm -f server.log client.log ./*.build.log
+    if [ "${CLEAN_LOGS}" == 'yes' ] ; then
+        rm -f server.log client.log ./*.build.log
+    fi
 }
 
 trap cleanup EXIT INT TERM
@@ -94,9 +97,6 @@ docker run -d \
     eclipse-mosquitto:latest \
     mosquitto -c /mosquitto-no-auth.conf \
     >/dev/null
-
-echo "    Waiting for broker to be ready..."
-sleep 2
 
 # Verify broker is accessible by checking if container is running
 if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
@@ -138,8 +138,6 @@ cargo run --quiet --example sensor_server --features "$FEATURE" > server.log 2>&
 SERVER_PID=$!
 
 echo "    Server PID: $SERVER_PID"
-echo "    Waiting for server to initialize..."
-sleep 3
 
 # Check if server is still running
 if ! kill -0 "$SERVER_PID" 2>/dev/null; then

@@ -80,6 +80,7 @@ struct Inner {
     transport: TransportPtr,
     node_id: String,
     pending: Mutex<PendingMap>,
+    config: crate::RpcConfig,
 
     /// Best-effort receive loop handle.
     ///
@@ -101,6 +102,7 @@ impl RpcClient {
     pub async fn with_transport(
         transport: TransportPtr,
         node_id: impl Into<String>,
+        config: crate::RpcConfig,
     ) -> Result<Self> {
         // ---
         let node_id = node_id.into();
@@ -158,6 +160,7 @@ impl RpcClient {
                 transport: transport_for_inner,
                 node_id: node_id_for_inner,
                 pending,
+                config,
                 _rx_task: rx_task,
             }
         });
@@ -178,7 +181,7 @@ impl RpcClient {
     pub async fn new(config: &crate::RpcConfig, node_id: &str) -> Result<Self> {
         // ---
         let transport = crate::create_transport(config).await?;
-        Self::with_transport(transport, node_id).await
+        Self::with_transport(transport, node_id, config.clone()).await
     }
 
     /// Send an RPC request to a target service node.
@@ -187,11 +190,16 @@ impl RpcClient {
     /// - `method`: RPC method name
     /// - `req`: request payload
     ///
+    /// If retry is configured via [`RpcConfig::with_retry()`](crate::RpcConfig::with_retry),
+    /// this method will automatically retry on [`RpcError::TransportRetryable`] errors
+    /// using exponential backoff.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - `RpcError::Serialization` - request serialization fails
-    /// - `RpcError::Transport` - message publish fails or response channel closes
+    /// - `RpcError::Transport` - message publish fails or response channel closes (non-retryable)
+    /// - `RpcError::TransportRetryable` - retryable transport error (retried if configured)
     /// - `RpcError::Serialization` - response deserialization fails
     pub async fn request_to<TReq, TResp>(
         &self,
@@ -203,6 +211,41 @@ impl RpcClient {
         TReq: Serialize,
         TResp: DeserializeOwned,
     {
+        let target_node_id = target_node_id.to_string();
+        let method = method.to_string();
+
+        // Serialize request once outside retry loop
+        let value: Value = serde_json::to_value(req)?;
+        let bytes = serde_json::to_vec(&value)?;
+        let req_bytes = Bytes::from(bytes);
+
+        // Use retry helper which checks config internally
+        let response_bytes = crate::retry_with_backoff(&self.inner.config, || {
+            let target_node_id = target_node_id.clone();
+            let method = method.clone();
+            let req_bytes = req_bytes.clone();
+
+            async move {
+                self.request_to_inner(&target_node_id, &method, req_bytes)
+                    .await
+            }
+        })
+        .await?;
+
+        // Deserialize response after successful retry
+        let resp: TResp = serde_json::from_slice(&response_bytes)?;
+        Ok(resp)
+    }
+
+    /// Inner request implementation without retry logic.
+    ///
+    /// This is separated so retry can wrap the entire request/response cycle.
+    async fn request_to_inner(
+        &self,
+        target_node_id: &str,
+        method: &str,
+        req_bytes: Bytes,
+    ) -> Result<Bytes> {
         // ---
         let correlation_id = CorrelationId::generate();
         let correlation_id_str = correlation_id.to_string();
@@ -216,13 +259,10 @@ impl RpcClient {
 
         let request_addr = Address::from(format!("requests/{target_node_id}"));
 
-        let value: Value = serde_json::to_value(req)?;
-        let bytes = serde_json::to_vec(&value)?;
-
         let env = Envelope::request(
             request_addr,
             method.into(),
-            Bytes::from(bytes),
+            req_bytes,
             Arc::from(correlation_id.to_string()),
             Address::from(format!("responses/{}", self.inner.node_id)),
             Arc::<str>::from("application/json"),
@@ -230,13 +270,30 @@ impl RpcClient {
 
         self.inner.transport.publish(env).await?;
 
-        let response = rx.await.map_err(|err| {
-            let msg =
-                format!("response channel closed (server dropped or transport shutdown:{err:?})");
-            RpcError::Transport(msg)
-        })?;
-        let resp: TResp = serde_json::from_slice(&response)?;
-        Ok(resp)
+        let timeout = self.inner.config.request_timeout;
+        let has_retry = self.inner.config.retry_config.is_some();
+
+        let response = time::timeout(timeout, rx)
+            .await
+            .map_err(|_| {
+                if has_retry {
+                    // With retry: return retryable error to trigger retry
+                    RpcError::TransportRetryable(
+                        "request timeout waiting for response, will retry".into(),
+                    )
+                } else {
+                    // Without retry: return terminal timeout error
+                    RpcError::Timeout
+                }
+            })?
+            .map_err(|err| {
+                let msg = format!(
+                    "response channel closed (server dropped or transport shutdown:{err:?})"
+                );
+                RpcError::Transport(msg)
+            })?;
+
+        Ok(response)
     }
 
     /// Send an RPC request with a timeout.
@@ -278,7 +335,7 @@ impl RpcClient {
     /// # async fn example() -> mom_rpc::Result<()> {
     /// let config = RpcConfig::memory("client");
     /// let transport = create_transport(&config).await?;
-    /// let client = RpcClient::with_transport(transport, "client").await?;
+    /// let client = RpcClient::with_transport(transport, "client", config).await?;
     ///
     /// let resp: SensorReading = client
     ///     .request_with_timeout(

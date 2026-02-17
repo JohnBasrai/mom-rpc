@@ -53,7 +53,7 @@
 //!     });
 //!     let _handle = server.spawn();
 //!
-//!     let client = RpcClient::with_transport(transport.clone(), "client-1").await?;
+//!     let client = RpcClient::with_transport(transport.clone(), "client-1", config).await?;
 //!     let resp: SensorReading = client
 //!         .request_to("env-sensor-42", "read_temperature", ReadTemperature {
 //!             unit: TemperatureUnit::Celsius,
@@ -93,10 +93,11 @@ mod correlation;
 mod error;
 
 // Re-export main types
+pub(crate) use client::retry_with_backoff;
 pub use client::RpcClient;
 pub use server::RpcServer;
 
-pub use rpc_config::RpcConfig;
+pub use rpc_config::{RetryConfig, RpcConfig};
 
 pub use correlation::CorrelationId;
 pub use error::{Result, RpcError};
