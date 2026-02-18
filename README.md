@@ -349,7 +349,7 @@ The builder tries transports in this order: `dust_dds` → `rumqttc` → `lapin`
 
 Applications can also run multiple transports concurrently (e.g., MQTT for IoT devices and AMQP for backend services) by creating separate transport instances.
 
-**Transport implementation sizes (as of v0.8.1):**
+**Transport implementation sizes (as of v0.8.2):**
 
 | Transport | Feature Flag | SLOC | Use Case |
 |:----------|:-------------|-----:|:---------|
@@ -427,7 +427,7 @@ broker.spawn()?;
 let resp = broker.request_to("device-123", "read-status", req).await?;
 ```
 
-See `examples/sensor_fullduplex.rs` for a complete full-duplex example, and [rust-edge-agent](https://github.com/JohnBasrai/rust-edge-agent/blob/main/src/agent/run.rs) for production usage.
+See `examples/sensor_fullduplex.rs` for a complete full-duplex example.
 
 ---
 
@@ -514,7 +514,7 @@ This library does not handle authentication. Delegate to:
 - [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.8.1)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.8.2)
 
 ---
 

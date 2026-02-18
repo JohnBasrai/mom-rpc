@@ -29,7 +29,7 @@ use mom_rpc::{Result, RpcBrokerBuilder, TransportBuilder};
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 
-const NODE_ID: &str = "env-sensor-42";
+const NODE_ID: &str = "env-sensor-fd-42";
 
 #[tokio::main]
 async fn main() -> Result<()> {

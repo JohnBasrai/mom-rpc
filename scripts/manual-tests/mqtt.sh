@@ -126,6 +126,10 @@ fi
 
 echo "    ✓ Examples built successfully"
 
+echo "==> Running sensor_fullduplex test..."
+env BROKER_URI="${BROKER_URI}" RUST_LOG=info \
+    cargo run --example sensor_fullduplex --features transport_rumqttc
+
 # ---
 
 echo ""
@@ -154,8 +158,8 @@ echo "    ✓ Server running"
 echo ""
 echo "==> Running sensor_client..."
 
-
-cargo --quiet run --example sensor_client --features "$FEATURE" >& client.log
+env BROKER_URI="${BROKER_URI}" RUST_LOG=info \
+    cargo --quiet run --example sensor_client --features "$FEATURE" >& client.log
 
 if grep -q  "Temperature" client.log && \
    grep -q  "Humidity"    client.log && \

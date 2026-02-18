@@ -451,6 +451,7 @@ impl RpcBroker {
             .map_err(|_| {
                 if has_retry {
                     // With retry: return retryable error to trigger retry
+                    crate::log_info!("Got timeout retry...");
                     RpcError::TransportRetryable(
                         "request timeout waiting for response, will retry".into(),
                     )

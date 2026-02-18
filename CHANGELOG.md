@@ -7,6 +7,13 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.8.1] - 2026-02-18
+
+### Fixed
+- **MQTT transport**: Concurrent subscribe requests no longer fail
+  when one is already in flight. The MQTT actor now serializes
+  subscribes without blocking the actor event loop
+
 ## [0.8.0] - 2026-02-18
 
 ### Breaking Changes
