@@ -6,25 +6,25 @@
 /// Operational mode of an RPC broker.
 ///
 /// The mode determines which operations are valid:
-/// - [`Client`](BrokerMode::Client): Can call `request_to()`, cannot `register()` handlers
-/// - [`Server`](BrokerMode::Server): Can `register()` handlers, cannot call `request_to()`
-/// - [`FullDuplex`](BrokerMode::FullDuplex): Can both `register()` and `request_to()`
+/// - [`Client`](BrokerMode::Client): Can call `request_to()`, cannot `register_rpc_handler()` handlers
+/// - [`Server`](BrokerMode::Server): Can `register_rpc_handler()` handlers, cannot call `request_to()`
+/// - [`FullDuplex`](BrokerMode::FullDuplex): Can both `register_rpc_handler()` and `request_to()`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrokerMode {
     /// Client mode - subscribes to response queue, publishes to request queues.
     ///
     /// Allows: `request_to()`  
-    /// Forbids: `register()`, `spawn()`, `run()`
+    /// Forbids: `register_rpc_handler()`, `spawn()`, `run()`
     Client,
 
     /// Server mode - subscribes to request queue, publishes to response queues.
     ///
-    /// Allows: `register()`, `spawn()`, `run()`  
+    /// Allows: `register_rpc_handler()`, `spawn()`, `run()`  
     /// Forbids: `request_to()`
     Server,
 
     /// Full-duplex mode - subscribes to both request and response queues.
     ///
-    /// Allows: All operations (`request_to()`, `register()`, `spawn()`, `run()`)
+    /// Allows: All operations (`request_to()`, `register_rpc_handler()`, `spawn()`, `run()`)
     FullDuplex,
 }

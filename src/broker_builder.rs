@@ -31,7 +31,7 @@ use std::time::Duration;
 ///     .retry_multiplier(2.0)
 ///     .retry_initial_delay(Duration::from_millis(200))
 ///     .retry_max_delay(Duration::from_secs(10))
-///     .request_timeout(Duration::from_millis(200))
+///     .request_total_timeout(Duration::from_millis(200))
 ///     .build()?;
 /// # Ok(())
 /// # }
@@ -65,7 +65,7 @@ pub struct RpcBrokerBuilder {
     retry_max_delay: Option<Duration>,
 
     // Request timeout (optional, default: 30s)
-    request_timeout: Option<Duration>,
+    request_total_timeout: Option<Duration>,
 }
 
 impl RpcBrokerBuilder {
@@ -83,7 +83,7 @@ impl RpcBrokerBuilder {
             retry_multiplier: None,
             retry_initial_delay: None,
             retry_max_delay: None,
-            request_timeout: None,
+            request_total_timeout: None,
         }
     }
 
@@ -99,23 +99,30 @@ impl RpcBrokerBuilder {
 
     /// Set maximum retry attempts.
     ///
-    /// Default: no retries (single attempt).
+    /// Default: 3 (three attempts).
     pub fn retry_max_attempts(mut self, attempts: u32) -> Self {
         self.retry_max_attempts = Some(attempts);
         self
     }
 
-    /// Set retry backoff multiplier.
+    /// Backoff multiplier applied after each failed attempt.
     ///
-    /// Default: 2.0 (exponential backoff).
+    /// The delay before attempt `n` is: `initial_delay * multiplier^(n-1)`,
+    /// capped at `retry_max_delay`.
+    ///
+    /// Default: 2.0 (doubles the delay each retry).
     pub fn retry_multiplier(mut self, multiplier: f32) -> Self {
         self.retry_multiplier = Some(multiplier);
         self
     }
 
-    /// Set initial delay before first retry.
+    /// Delay before the first retry attempt.
     ///
-    /// Default: 100ms.
+    /// Subsequent delays grow by `retry_multiplier` each attempt, up to
+    /// `retry_max_delay`. For example, with `initial_delay=100ms` and
+    /// `multiplier=2.0`: 100ms → 200ms → 400ms → ...
+    ///
+    /// Default: 100ms
     pub fn retry_initial_delay(mut self, delay: Duration) -> Self {
         self.retry_initial_delay = Some(delay);
         self
@@ -129,11 +136,21 @@ impl RpcBrokerBuilder {
         self
     }
 
-    /// Set request timeout per attempt.
+    /// Sets the total time budget for a single RPC request, including all retry
+    /// attempts.
     ///
-    /// Default: 30s.
-    pub fn request_timeout(mut self, timeout: Duration) -> Self {
-        self.request_timeout = Some(timeout);
+    /// This is a wall-clock deadline from the moment `request_to()` is called
+    /// until a response is received or the request is abandoned — regardless of
+    /// how many retries occur or how long individual retries take.
+    ///
+    /// The actual elapsed time may be less than this value if retry parameters
+    /// exhaust their budget first. For example, with `retry_max_attempts(3)`
+    /// and `retry_max_delay(2s)`, the retry sequence may complete well under a
+    /// 30s total timeout.
+    ///
+    /// Default: 30 seconds
+    pub fn request_total_timeout(mut self, timeout: Duration) -> Self {
+        self.request_total_timeout = Some(timeout);
         self
     }
 
@@ -171,8 +188,16 @@ impl RpcBrokerBuilder {
             None
         };
 
-        let request_timeout = self.request_timeout.unwrap_or(Duration::from_secs(30));
+        let request_total_timeout = self
+            .request_total_timeout
+            .unwrap_or(Duration::from_secs(30));
 
-        RpcBroker::new(self.transport, node_id, mode, retry_config, request_timeout)
+        RpcBroker::new(
+            self.transport,
+            node_id,
+            mode,
+            retry_config,
+            request_total_timeout,
+        )
     }
 }

@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
         .retry_multiplier(2.)
         .retry_initial_delay(Duration::from_millis(200))
         .retry_max_delay(Duration::from_millis(1000))
-        .request_timeout(Duration::from_millis(200))
+        .request_total_timeout(Duration::from_secs(10))
         .build()?;
 
     let temp: SensorReading = client
