@@ -58,7 +58,8 @@ pub enum RpcError {
 
     /// Operation not allowed in current broker mode.
     ///
-    /// For example, calling `request_to()` in Server mode or `register()` in Client mode.
+    /// For example, calling `request_to()` in Server mode or
+    /// `register_rpc_handler()` in Client mode.
     #[error("invalid mode: {0}")]
     InvalidMode(String),
 

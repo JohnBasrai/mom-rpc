@@ -37,8 +37,8 @@ type HandlerRegistry = Arc<Mutex<HashMap<String, Arc<dyn HandlerFn>>>>;
 /// Unified RPC broker supporting client, server, and full-duplex modes.
 ///
 /// The broker's operational mode determines which methods are valid:
-/// - **Client mode**: Can call `request_to()`, cannot `register()` or `spawn()`
-/// - **Server mode**: Can `register()` and `spawn()`, cannot call `request_to()`
+/// - **Client mode**: Can call `request_to()`, cannot `register_rpc_handler()` or `spawn()`
+/// - **Server mode**: Can `register_rpc_handler()` and `spawn()`, cannot call `request_to()`
 /// - **Full-duplex mode**: Can use all methods
 pub struct RpcBroker {
     inner: Arc<Inner>,
@@ -49,7 +49,7 @@ struct Inner {
     node_id: String,
     mode: BrokerMode,
     retry_config: Option<RetryConfig>,
-    request_timeout: Duration,
+    request_total_timeout: Duration,
 
     // Client-side state (for Client and FullDuplex modes)
     pending: PendingRequests,
@@ -123,7 +123,7 @@ impl RpcBroker {
         node_id: String,
         mode: BrokerMode,
         retry_config: Option<RetryConfig>,
-        request_timeout: Duration,
+        request_total_timeout: Duration,
     ) -> Result<Self> {
         // Initialize based on mode
         let pending: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
@@ -172,7 +172,7 @@ impl RpcBroker {
                 node_id,
                 mode,
                 retry_config,
-                request_timeout,
+                request_total_timeout,
                 pending,
                 _rx_task: rx_task,
                 handlers,
@@ -314,11 +314,14 @@ impl RpcBroker {
         })
     }
 
-    /// Send an RPC request (Client or FullDuplex mode only).
+    /// Send an RPC request (Client or FullDuplex mode only).  Uses the broker's
+    /// configured `request_total_timeout`.
     ///
     /// # Errors
     ///
-    /// Returns `RpcError::InvalidMode` if called in Server mode.
+    /// Returns [`RpcError::Timeout`] if the request exceeds `request_total_timeout`.
+    ///
+    /// Returns [`RpcError::InvalidMode`] if the broker is in server mode.
     pub async fn request_to<TReq, TResp>(
         &self,
         target_node_id: &str,
@@ -330,18 +333,26 @@ impl RpcBroker {
         TResp: DeserializeOwned,
     {
         // Use configured timeout
-        self.request_to_with_timeout(target_node_id, method, req, self.inner.request_timeout)
-            .await
+        self.request_to_with_timeout(
+            target_node_id,
+            method,
+            req,
+            self.inner.request_total_timeout,
+        )
+        .await
     }
 
     /// Send an RPC request with custom timeout (Client or FullDuplex mode only).
     ///
-    /// Overrides the broker's configured `request_timeout` for this single request.
-    /// Useful for operations that need longer/shorter timeouts than the default.
+    /// Overrides the broker's configured `request_total_timeout` for this single
+    /// request.  Useful for operations that need longer/shorter timeouts than the
+    /// default.
     ///
     /// # Errors
     ///
-    /// Returns `RpcError::InvalidMode` if called in Server mode.
+    /// Returns [`RpcError::Timeout`] if the request exceeds `request_total_timeout`.
+    ///
+    /// Returns [`RpcError::InvalidMode`] if the broker is in server mode.
     pub async fn request_to_with_timeout<TReq, TResp>(
         &self,
         target_node_id: &str,
@@ -440,6 +451,7 @@ impl RpcBroker {
             .map_err(|_| {
                 if has_retry {
                     // With retry: return retryable error to trigger retry
+                    crate::log_info!("Got timeout retry...");
                     RpcError::TransportRetryable(
                         "request timeout waiting for response, will retry".into(),
                     )
@@ -463,7 +475,7 @@ impl RpcBroker {
     /// # Errors
     ///
     /// Returns `RpcError::InvalidMode` if called in Client mode.
-    pub fn register<TReq, TResp, F, Fut>(&self, method: &str, handler: F) -> Result<()>
+    pub fn register_rpc_handler<TReq, TResp, F, Fut>(&self, method: &str, handler: F) -> Result<()>
     where
         TReq: DeserializeOwned + Send + 'static,
         TResp: Serialize + Send + 'static,
@@ -477,7 +489,7 @@ impl RpcBroker {
             }
             BrokerMode::Client => {
                 return Err(RpcError::InvalidMode(
-                    "register() not allowed in Client mode".into(),
+                    "register_rpc_handler() not allowed in Client mode".into(),
                 ));
             }
         }

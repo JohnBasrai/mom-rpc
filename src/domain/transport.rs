@@ -27,10 +27,13 @@ use tokio::sync::mpsc;
 /// RPC operations are valid on the resulting broker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportMode {
+    // ---
     /// Subscribes to response queue only. Supports `request_to()`.
     Client,
-    /// Subscribes to request queue only. Supports `register()`, `spawn()`, `run()`.
+
+    /// Subscribes to request queue only. Supports `register_rpc_handle()`, `spawn()`, `run()`.
     Server,
+
     /// Subscribes to both queues. Supports all operations.
     FullDuplex,
 }

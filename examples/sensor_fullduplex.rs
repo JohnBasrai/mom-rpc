@@ -29,7 +29,7 @@ use mom_rpc::{Result, RpcBrokerBuilder, TransportBuilder};
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 
-const NODE_ID: &str = "env-sensor-42";
+const NODE_ID: &str = "env-sensor-fd-42";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -59,14 +59,14 @@ async fn main() -> Result<()> {
     let broker = RpcBrokerBuilder::new(transport.clone())
         .retry_max_attempts(5)
         .retry_initial_delay(Duration::from_millis(100))
-        .request_timeout(Duration::from_millis(500))
+        .request_total_timeout(Duration::from_millis(500))
         .build()?;
 
     // Register RPC handlers (server-side)
     println!("📝 Registering RPC handlers...");
-    broker.register("read_temperature", handle_temperature)?;
-    broker.register("read_humidity", handle_humidity)?;
-    broker.register("read_pressure", handle_pressure)?;
+    broker.register_rpc_handler("read_temperature", handle_temperature)?;
+    broker.register_rpc_handler("read_humidity", handle_humidity)?;
+    broker.register_rpc_handler("read_pressure", handle_pressure)?;
     println!("   ✓ read_temperature");
     println!("   ✓ read_humidity");
     println!("   ✓ read_pressure\n");

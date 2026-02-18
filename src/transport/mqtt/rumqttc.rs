@@ -102,7 +102,7 @@ type TaskList = Arc<RwLock<Vec<JoinHandle<()>>>>;
 /// we serialize subscription requests to maintain correlation. This is
 /// acceptable for RPC use cases where subscriptions are rare and typically
 /// occur at startup.
-type PendingSubscribe = Arc<RwLock<Option<(String, oneshot::Sender<Result<()>>)>>>;
+type PendingSubscribe = Arc<RwLock<Option<(String, oneshot::Sender<Result<Ack>>)>>>;
 
 //
 // Actor commands
@@ -116,11 +116,18 @@ enum Cmd {
     },
     Subscribe {
         topic: String,
-        resp: oneshot::Sender<Result<()>>,
+        resp: oneshot::Sender<Result<Ack>>,
     },
     Close {
         resp: oneshot::Sender<Result<()>>,
     },
+}
+
+/// Actor Ack
+#[derive(PartialEq)]
+pub enum Ack {
+    Ok,
+    Retry,
 }
 
 enum ActorStep {
@@ -334,19 +341,17 @@ impl MqttActor {
     ///
     /// Subscriptions are serialized (one at a time) to maintain correlation with
     /// SUBACK packets, which contain only packet IDs (not topic names).
-    async fn handle_subscribe(&mut self, topic: String, resp: oneshot::Sender<Result<()>>) {
+    async fn handle_subscribe(&mut self, topic: String, resp: oneshot::Sender<Result<Ack>>) {
         // ---
+        let transport_id = &self.transport_id.as_str();
 
         // Store the pending subscribe for SUBACK correlation
         {
             let mut pending = self.pending_subscribe.write().await;
             if pending.is_some() {
-                let msg = format!(
-                    "{}: attempted concurrent subscribe while one is pending",
-                    self.transport_id,
-                );
-                log_error!("{msg}");
-                let _ = resp.send(Err(RpcError::Transport(msg)));
+                log_info!("{transport_id}:ACTOR: found pending subscribe, returning retry...",);
+                // Another subscribe is in flight; tell caller to retry after a short delay
+                let _ = resp.send(Ok(Ack::Retry));
                 return;
             }
             *pending = Some((topic.clone(), resp));
@@ -354,18 +359,19 @@ impl MqttActor {
 
         // Send subscribe request to broker
         if let Err(err) = self.client.subscribe(&topic, QoS::AtMostOnce).await {
-            // ---
-            // Remove from pending on immediate error
-            let mut pending = self.pending_subscribe.write().await;
-
-            if let Some((topic, responder)) = pending.take() {
-                let msg = format!(
-                    "{}: failed to send subscribe for topic {topic}: {err}",
-                    self.transport_id
-                );
-                log_error!("{msg}");
-                let _ = responder.send(Err(RpcError::Transport(msg)));
-            }
+            let _ = {
+                let mut pending = self.pending_subscribe.write().await;
+                if let Some((topic, responder)) = pending.take() {
+                    let msg = format!(
+                        "{transport_id}: failed to send subscribe for topic {topic}: {err}"
+                    );
+                    log_error!("{msg}");
+                    let _ = responder.send(Err(RpcError::Transport(msg)));
+                    true
+                } else {
+                    false
+                }
+            }; // `pending` guard dropped here
         }
 
         // SUBACK will be handled by handle_suback() when it arrives
@@ -398,7 +404,7 @@ impl MqttActor {
 
         if success {
             log_info!("{transport_id}: successfully subscribed to topic {topic}");
-            let _ = responder.send(Ok(()));
+            let _ = responder.send(Ok(Ack::Ok));
         } else {
             let msg = format!(
                 "{transport_id}: subscription failed for topic {topic}: {:?}",
@@ -543,23 +549,39 @@ impl Transport for RumqttcTransport {
             map.entry(topic.clone()).or_default().push(tx);
         }
 
-        let (resp_tx, resp_rx) = oneshot::channel();
+        loop {
+            let (resp_tx, resp_rx) = oneshot::channel();
 
-        self.cmd_tx
-            .send(Cmd::Subscribe {
-                topic,
-                resp: resp_tx,
-            })
-            .await
-            .map_err(|e| {
-                let msg = format!("actor command channel closed:{e}");
+            self.cmd_tx
+                .send(Cmd::Subscribe {
+                    topic: topic.clone(),
+                    resp: resp_tx,
+                })
+                .await
+                .map_err(|e| {
+                    let msg = format!("actor command channel closed:{e}");
+                    RpcError::Transport(msg)
+                })?;
+
+            match resp_rx.await.map_err(|e| {
+                let msg = format!("actor resp_rx channel read failed:{e}");
                 RpcError::Transport(msg)
-            })?;
-
-        resp_rx.await.map_err(|e| {
-            let msg = format!("actor resp_rx channel read failed:{e}");
-            RpcError::Transport(msg)
-        })??;
+            })? {
+                // Another subscribe is in flight; yield and retry until the
+                // broker confirms the current one via SUBACK
+                Ok(Ack::Retry) => {
+                    let delay_ms = 200;
+                    log_info!(
+                        "{}: subscribe: Got Ack::Retry, retrying in {delay_ms}ms...",
+                        self.base.transport_id
+                    );
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    continue;
+                }
+                Ok(Ack::Ok) => break,
+                Err(e) => return Err(e),
+            }
+        }
 
         Ok(SubscriptionHandle { inbox: rx })
     }

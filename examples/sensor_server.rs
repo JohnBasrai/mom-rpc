@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
 
     let server = RpcBrokerBuilder::new(transport.clone()).build()?;
 
-    server.register("read_temperature", |req: ReadTemperature| async move {
+    server.register_rpc_handler("read_temperature", |req: ReadTemperature| async move {
         // ---
         let celsius = 21.5_f32;
         let (value, unit) = match req.unit {
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
         })
     })?;
 
-    server.register("read_humidity", |_req: ReadHumidity| async move {
+    server.register_rpc_handler("read_humidity", |_req: ReadHumidity| async move {
         // ---
         Ok(SensorReading {
             value: 55.0,
@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
         })
     })?;
 
-    server.register("read_pressure", |_req: ReadPressure| async move {
+    server.register_rpc_handler("read_pressure", |_req: ReadPressure| async move {
         // ---
         Ok(SensorReading {
             value: 101.3,
