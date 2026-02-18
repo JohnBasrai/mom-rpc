@@ -409,6 +409,9 @@ pub trait Transport: Send + Sync {
     async fn publish(&self, env: Envelope) -> Result<()>;
 
     /// Register a subscription and return a handle for receiving messages.
+    ///
+    /// Concurrent calls are safe; transports may serialize them internally
+    /// if required by the underlying protocol.
     async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle>;
 
     /// Close the transport and release any associated resources.

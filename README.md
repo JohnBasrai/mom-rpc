@@ -427,7 +427,7 @@ broker.spawn()?;
 let resp = broker.request_to("device-123", "read-status", req).await?;
 ```
 
-See `examples/sensor_fullduplex.rs` for a complete full-duplex example, and [rust-edge-agent](https://github.com/JohnBasrai/rust-edge-agent/blob/main/src/agent/run.rs) for production usage.
+See `examples/sensor_fullduplex.rs` for a complete full-duplex example.
 
 ---
 
