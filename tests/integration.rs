@@ -72,7 +72,7 @@ impl SensorServer {
         let broker = RpcBrokerBuilder::new(transport).build()?;
 
         // Register temperature reading handler
-        broker.register("temperature", |req: ReadTemperature| async move {
+        broker.register_rpc_handler("temperature", |req: ReadTemperature| async move {
             let base_temp = 23.5; // Base temperature in Celsius
             let value = match req.unit {
                 TemperatureUnit::Celsius => base_temp,
@@ -93,7 +93,7 @@ impl SensorServer {
         })?;
 
         // Register humidity reading handler
-        broker.register("humidity", |_req: ReadHumidity| async move {
+        broker.register_rpc_handler("humidity", |_req: ReadHumidity| async move {
             Ok(SensorReading {
                 value: 45.2,
                 unit: "%RH".to_string(),
@@ -105,7 +105,7 @@ impl SensorServer {
         })?;
 
         // Register pressure reading handler
-        broker.register("pressure", |_req: ReadPressure| async move {
+        broker.register_rpc_handler("pressure", |_req: ReadPressure| async move {
             Ok(SensorReading {
                 value: 1013.25,
                 unit: "hPa".to_string(),
@@ -264,7 +264,7 @@ async fn test_timeout() -> Result<()> {
     let server = RpcBrokerBuilder::new(transport).build()?;
 
     // Register a slow temperature sensor that takes 1 second to respond
-    server.register("temperature", |req: ReadTemperature| async move {
+    server.register_rpc_handler("temperature", |req: ReadTemperature| async move {
         tokio::time::sleep(Duration::from_millis(1000)).await;
         let value = match req.unit {
             TemperatureUnit::Celsius => 23.5,
@@ -318,7 +318,7 @@ async fn test_error_response() -> Result<()> {
     let server = RpcBrokerBuilder::new(transport).build()?;
 
     // Register a sensor that fails for specific conditions
-    server.register("temperature", |req: ReadTemperature| async move {
+    server.register_rpc_handler("temperature", |req: ReadTemperature| async move {
         // Simulate sensor malfunction for Fahrenheit readings
         match req.unit {
             TemperatureUnit::Fahrenheit => Err(RpcError::InvalidRequest),
@@ -445,7 +445,7 @@ async fn test_request_with_timeout_expires() -> Result<()> {
     let server = RpcBrokerBuilder::new(transport).build()?;
 
     // Register a slow pressure sensor
-    server.register("pressure", |_req: ReadPressure| async move {
+    server.register_rpc_handler("pressure", |_req: ReadPressure| async move {
         tokio::time::sleep(Duration::from_millis(200)).await;
         Ok(SensorReading {
             value: 1013.25,
@@ -493,7 +493,7 @@ async fn test_run_blocks_until_shutdown() -> Result<()> {
     let transport = server_transport(node_id, hub).await?;
     let broker = RpcBrokerBuilder::new(transport).build()?;
 
-    broker.register("temperature", |req: ReadTemperature| async move {
+    broker.register_rpc_handler("temperature", |req: ReadTemperature| async move {
         let value = match req.unit {
             TemperatureUnit::Celsius => 23.5,
             TemperatureUnit::Fahrenheit => 74.3,

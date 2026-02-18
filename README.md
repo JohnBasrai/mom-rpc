@@ -219,9 +219,10 @@ let transport = TransportBuilder::new()
     .await?;
 
 let client = RpcBrokerBuilder::new(transport.clone())
-    .retry_max_attempts(10)
-    .retry_initial_delay(Duration::from_millis(100))
-    .request_timeout(Duration::from_millis(500))
+    .retry_max_attempts(5)
+    .retry_initial_delay(Duration::from_millis(200))
+    .retry_max_delay(Duration::from_secs(5))
+    .request_total_timeout(Duration::from_secs(30))
     .build()?;
 
 let resp: SensorReading = client
@@ -237,8 +238,7 @@ let resp: SensorReading = client
 println!("Temperature: {} {}", resp.value, resp.unit);
 transport.close().await?;
 ```
-
-See complete working examples:
+See complete working [examples](https://github.com/JohnBasrai/mom-rpc/tree/main/examples):
  - `examples/sensor_server.rs`
  - `examples/sensor_client.rs`
  - `examples/sensor_fullduplex.rs`
@@ -349,28 +349,33 @@ The builder tries transports in this order: `dust_dds` → `rumqttc` → `lapin`
 
 Applications can also run multiple transports concurrently (e.g., MQTT for IoT devices and AMQP for backend services) by creating separate transport instances.
 
-**Transport implementation sizes (as of v0.8.0):**
+**Transport implementation sizes (as of v0.8.1):**
 
-| Transport | Feature Flag         | SLOC | Use Case |
-|:----------|:---------------------|-----:|:---------|
-| In-memory | *(always available)* |  103 | Testing, single-process |
-| AMQP      | `transport_lapin`    |  313 | RabbitMQ, enterprise messaging |
-| MQTT      | `transport_rumqttc`  |  404 | IoT, lightweight pub/sub |
-| DDS       | `transport_dust_dds` |  704 | Real-time, mission-critical |
+| Transport | Feature Flag | SLOC | Use Case |
+|:----------|:-------------|-----:|:---------|
+| In-memory | *(always available)* | 107 | Testing, single-process |
+| AMQP      | `transport_lapin`    | 313 | RabbitMQ, enterprise messaging |
+| MQTT      | `transport_rumqttc`  | 404 | IoT, lightweight pub/sub |
+| DDS       | `transport_dust_dds` | 703 | Real-time, mission-critical |
 
 **Notes:**
- - *Core library: 1350 lines, including In-memory.*
- - *Total: 2770 lines.*
+ - *Core library: 1,381 lines, including In-memory.
+ - *Total: 2,801 lines.*
  - *SLOC measured using `tokei` (crates.io methodology).*
 
-Example: An application using only the MQTT transport compiles 1350 + 404 = 1754 lines of `mom-rpc` code.
-With both MQTT and AMQP enabled: 1350 + 404 + 313 = 2067 lines.
+Example: An application using only the MQTT transport compiles 1381 + 404 = 1785 lines of `mom-rpc` code.
+With both MQTT and AMQP enabled: 1381 + 404 + 313 = 2098 lines.
 
 ---
 
 ## Overriding Default Timeout
 
+`request_total_timeout` is a **total wall-clock budget** for the entire request, including all retry attempts. It is distinct from `retry_max_delay`, which caps the interval between individual retries.
+
+The actual elapsed time may be less than the total timeout if the retry sequence exhausts its attempts first — whichever limit is reached first wins.
+
 Configure timeouts per-request or at the broker level:
+
 
 ```rust
 use std::time::Duration;
@@ -378,7 +383,7 @@ use std::time::Duration;
 
 // Configure default timeout on the broker
 let client = RpcBrokerBuilder::new(transport)
-    .request_timeout(Duration::from_secs(5)) // global default timeout.
+    .request_total_timeout(Duration::from_secs(5)) // global default timeout.
     .build()?;
 
 // Per-request timeout (overrides the broker default)
@@ -509,7 +514,7 @@ This library does not handle authentication. Delegate to:
 - [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.8.0)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.8.1)
 
 ---
 

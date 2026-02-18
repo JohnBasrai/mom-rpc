@@ -49,7 +49,7 @@
 //!         .await?;
 //!
 //!     let server = RpcBrokerBuilder::new(transport.clone()).build()?;
-//!     server.register("read_temperature", |req: ReadTemperature| async move {
+//!     server.register_rpc_handler("read_temperature", |req: ReadTemperature| async move {
 //!         let celsius = 22.0_f32;
 //!         let (value, unit) = match req.unit {
 //!             TemperatureUnit::Celsius => (celsius, "C"),
