@@ -64,17 +64,29 @@ impl Transport for MemoryTransport {
 
 **Function definitions:**
 ```rust
-pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
+async fn publish(&self, _transport_id: &str, env: Envelope) -> Result<()> {
     // ---
-    let transport_id = config.transport_id.clone();
-    
-    let transport = MemoryTransport {
-        // ---
-        transport_id,
-        subscriptions: RwLock::new(HashMap::new()),
-    };
+    let subs = self.subscriptions.read().await;
 
-    Ok(Arc::new(transport))
+    for (sub, senders) in subs.iter() {
+        // --- (optional space here)
+        if sub.0 == env.address.0 {
+            log_debug!("{_transport_id}: publish to {sub:?}");
+
+            for sender in senders {
+                // Ignore send failures; a closed channel indicates
+                // a dropped SubscriptionHandle.
+                match sender.send(env.clone()).await {
+                    Ok(_) => {}
+                    Err(_err) => {
+                        log_info!("publish error {_err:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 ```
 
