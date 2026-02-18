@@ -25,7 +25,7 @@
 //! deterministic baseline against which higher-level behavior can be validated.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use tokio::sync::{mpsc, RwLock};
 
@@ -39,58 +39,73 @@ use crate::{
     Address,
     Envelope,
     Result,
-    RpcConfig,
     Subscription,
     SubscriptionHandle,
     Transport,
+    TransportBase,
+    TransportConfig,
     TransportPtr,
 };
 
-/// In-memory transport.
+/// Shared message bus for the in-memory transport.
 ///
-/// This transport simulates a message broker entirely within the process.
-/// It is intended for testing and for validating higher-level behavior
-/// without introducing network, broker, or timing-related variability.
+/// Simulates a message broker within a single process. All `MemoryTransport`
+/// instances that share a `MemoryHub` can publish and receive each other's
+/// messages, exactly as nodes connected to a real broker would.
 ///
-/// ## Semantics
+/// # ⚠️  Testing Only - Subject to Change
 ///
-/// - Subscriptions are registered immediately.
-/// - Once `subscribe()` returns, subsequent matching publishes are deliverable.
-/// - Message delivery is deterministic within a single process.
-/// - Subscriptions remain active until the transport is closed.
+/// **This type is exposed only for `mom-rpc`'s own integration tests.**  
+/// It may change or be removed in future versions without a deprecation cycle.  
+/// **Production code should use [`TransportBuilder`](crate::TransportBuilder)** instead.
 ///
-/// ## Non-Goals
+/// # Usage in Integration Tests
 ///
-/// - Persistence or durability
-/// - Network behavior or failure simulation
-/// - Exact emulation of MQTT, AMQP, or other broker semantics
-struct MemoryTransport {
+/// For integration tests that need isolation between parallel test cases,
+/// construct a hub explicitly and pass it to [`create_memory_transport_with_hub`]:
+///
+/// ```
+/// # use mom_rpc::{MemoryHub, TransportConfig, TransportMode};
+/// # async fn example() -> mom_rpc::Result<()> {
+/// let hub = MemoryHub::new();
+///
+/// let server_config = TransportConfig {
+///     uri: String::new(), node_id: "server".into(), mode: TransportMode::Server,
+///     request_queue: Some("requests/server".into()), response_queue: None,
+///     transport_type: None, keep_alive_secs: None,
+/// };
+/// let client_config = TransportConfig {
+///     uri: String::new(), node_id: "client".into(), mode: TransportMode::Client,
+///     request_queue: None, response_queue: Some("responses/client".into()),
+///     transport_type: None, keep_alive_secs: None,
+/// };
+///
+/// let server_transport = mom_rpc::create_memory_transport_with_hub(server_config, hub.clone()).await?;
+/// let client_transport = mom_rpc::create_memory_transport_with_hub(client_config, hub.clone()).await?;
+/// # Ok(())
+/// # }
+/// ```
+pub struct MemoryHub {
     // ---
     subscriptions: RwLock<HashMap<Subscription, Vec<mpsc::Sender<Envelope>>>>,
-    transport_id: String,
 }
 
-#[async_trait::async_trait]
-impl Transport for MemoryTransport {
-    // ---
-    fn transport_id(&self) -> &str {
-        self.transport_id.as_str()
+impl MemoryHub {
+    /// Create a new, empty hub.
+    pub fn new() -> Arc<Self> {
+        // ---
+        Arc::new(Self {
+            subscriptions: RwLock::new(HashMap::new()),
+        })
     }
 
-    /// Publish an envelope to all matching subscriptions.
-    ///
-    /// Matching semantics are intentionally simple: a subscription matches
-    /// an address if their underlying string values are exactly equal.
-    ///
-    /// This behavior defines the reference matching semantics for the
-    /// transport layer.
-    async fn publish(&self, env: Envelope) -> Result<()> {
+    async fn publish(&self, _transport_id: &str, env: Envelope) -> Result<()> {
         // ---
         let subs = self.subscriptions.read().await;
 
         for (sub, senders) in subs.iter() {
             if sub.0 == env.address.0 {
-                log_debug!("{}: publish to {sub:?}", self.transport_id());
+                log_debug!("{_transport_id}: publish to {sub:?}");
 
                 for sender in senders {
                     // Ignore send failures; a closed channel indicates
@@ -108,15 +123,13 @@ impl Transport for MemoryTransport {
         Ok(())
     }
 
-    /// Register a subscription.
-    ///
-    /// Once this function returns successfully, any subsequent calls to
-    /// `publish()` with matching addresses are deliverable to the returned
-    /// inbox.
-    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
+    async fn subscribe(
+        &self,
+        _transport_id: &str,
+        sub: Subscription,
+    ) -> Result<SubscriptionHandle> {
         // ---
-
-        log_debug!("{}: subscribe to {sub:?}", self.transport_id());
+        log_debug!("{_transport_id}: subscribe to {sub:?}");
 
         let (tx, rx) = mpsc::channel(16);
 
@@ -126,13 +139,9 @@ impl Transport for MemoryTransport {
         Ok(SubscriptionHandle { inbox: rx })
     }
 
-    /// Close the transport.
-    ///
-    /// For the in-memory transport, this clears all subscriptions.
-    async fn close(&self) -> Result<()> {
+    async fn close(&self, _transport_id: &str) -> Result<()> {
         // ---
-
-        log_debug!("{}: closing transport...", self.transport_id());
+        log_debug!("{_transport_id}: closing transport...");
 
         let mut subs = self.subscriptions.write().await;
         subs.clear();
@@ -140,22 +149,112 @@ impl Transport for MemoryTransport {
     }
 }
 
-/// Create a new in-memory transport.
+impl Default for MemoryHub {
+    fn default() -> Self {
+        // ---
+        Self {
+            subscriptions: RwLock::new(HashMap::new()),
+        }
+    }
+}
+
+/// Process-global hub used by [`create_memory_transport`].
+static GLOBAL_HUB: OnceLock<Arc<MemoryHub>> = OnceLock::new();
+
+fn global_hub() -> Arc<MemoryHub> {
+    GLOBAL_HUB.get_or_init(MemoryHub::new).clone()
+}
+
+/// In-memory transport.
 ///
-/// This transport is always available and requires no external resources.
+/// Routes messages through a shared [`MemoryHub`], simulating a message broker
+/// within the process. Multiple transport instances sharing the same hub can
+/// publish and receive each other's messages.
+struct MemoryTransport {
+    // ---
+    base: TransportBase,
+    hub: Arc<MemoryHub>,
+}
+
+#[async_trait::async_trait]
+impl Transport for MemoryTransport {
+    // ---
+    fn base(&self) -> &TransportBase {
+        &self.base
+    }
+
+    /// Publish an envelope to all matching subscriptions on the shared hub.
+    ///
+    /// Matching semantics are intentionally simple: a subscription matches
+    /// an address if their underlying string values are exactly equal.
+    ///
+    /// This behavior defines the reference matching semantics for the
+    /// transport layer.
+    async fn publish(&self, env: Envelope) -> Result<()> {
+        self.hub.publish(self.transport_id(), env).await
+    }
+
+    /// Register a subscription on the shared hub.
+    ///
+    /// Once this function returns successfully, any subsequent calls to
+    /// `publish()` with matching addresses are deliverable to the returned
+    /// inbox.
+    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
+        self.hub.subscribe(self.transport_id(), sub).await
+    }
+
+    /// Close the transport.
+    ///
+    /// Clears all subscriptions from the shared hub. Note that if other
+    /// transports share the same hub, their subscriptions are also cleared.
+    /// Use per-test hubs via [`create_memory_transport_with_hub`] to avoid this.
+    async fn close(&self) -> Result<()> {
+        self.hub.close(self.transport_id()).await
+    }
+}
+
+/// Create a new in-memory transport using the process-global hub.
+///
+/// All transports created with this function share a single message bus,
+/// matching the semantics of nodes connected to a real broker. Suitable for
+/// production use and simple single-test scenarios.
+///
+/// For isolated parallel testing, use [`create_memory_transport_with_hub`].
 ///
 /// # Errors
 ///
-/// Currently infallible - always returns `Ok`.
-pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
+/// Currently infallible — always returns `Ok`.
+pub async fn create_memory_transport(config: TransportConfig) -> Result<TransportPtr> {
     // ---
-    let transport_id = config.transport_id.clone();
-    log_debug!("{transport_id}: create memory transport");
+    create_memory_transport_with_hub(config, global_hub()).await
+}
+
+/// Create a new in-memory transport using the provided hub.
+///
+/// # ⚠️  Testing Only - Subject to Change
+///
+/// **This function is exposed only for `mom-rpc`'s own integration tests.**  
+/// It may change or be removed in future versions without a deprecation cycle.  
+/// **Production code should use [`TransportBuilder`](crate::TransportBuilder)** instead.
+///
+/// # Purpose
+///
+/// Allows multiple transports to share an explicitly constructed [`MemoryHub`],
+/// providing isolation between test cases running in parallel.
+///
+/// # Errors
+///
+/// Currently infallible — always returns `Ok`.
+pub async fn create_memory_transport_with_hub(
+    config: TransportConfig,
+    hub: Arc<MemoryHub>,
+) -> Result<TransportPtr> {
+    // ---
+    log_debug!("{}: create memory transport", config.node_id);
 
     let transport = MemoryTransport {
-        // ---
-        transport_id,
-        subscriptions: RwLock::new(HashMap::new()),
+        base: TransportBase::from(&config),
+        hub,
     };
 
     Ok(Arc::new(transport))

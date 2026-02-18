@@ -6,158 +6,251 @@
 )]
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
 use tracing::info;
 
+#[allow(unused)]
 use mom_rpc::{
-    //
-    create_memory_transport,
+    // ---
+    MemoryHub,
     Result,
-    RpcClient,
-    RpcConfig,
+    RpcBroker,
+    RpcBrokerBuilder,
     RpcError,
-    RpcServer,
+    TransportBuilder,
+    TransportConfig,
+    TransportMode,
     TransportPtr,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
-struct AddRequest {
-    a: i32,
-    b: i32,
+struct ReadTemperature {
+    unit: TemperatureUnit,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct AddResponse {
-    sum: i32,
+struct ReadHumidity;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ReadPressure;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SensorReading {
+    value: f32,
+    unit: String,
+    timestamp_ms: u64,
 }
 
-struct MathServer {
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum TemperatureUnit {
+    Celsius,
+    Fahrenheit,
+}
+
+/// Test fixture: a sensor server on an isolated [`MemoryHub`].
+///
+/// Each `SensorServer` owns the hub so tests are fully isolated from each other.
+struct SensorServer {
     // ---
-    handle: JoinHandle<Result<()>>,
-    _server: RpcServer,
-    transport: TransportPtr,
+    _handle: JoinHandle<()>,
+    broker: RpcBroker,
     node_id: String,
-    config: RpcConfig,
+    hub: Arc<MemoryHub>,
 }
 
-impl MathServer {
+impl SensorServer {
     // ---
     async fn new(id: &str) -> Result<Self> {
         // ---
+        let node_id = format!("sensor-{id}");
+        let hub = MemoryHub::new();
 
-        let config = RpcConfig::memory(id);
-        let transport = create_memory_transport(&config).await?;
-        // Use test-specific node_id to avoid subscription conflicts
-        let node_id = format!("math-{id}");
-        let server = RpcServer::with_transport(transport.clone(), node_id.clone());
+        let transport = server_transport(&node_id, hub.clone()).await?;
+        let broker = RpcBrokerBuilder::new(transport).build()?;
 
-        server.register("add", |req: AddRequest| async move {
-            // ---
-            Ok(AddResponse { sum: req.a + req.b })
-        });
-        let handle = server.spawn();
+        // Register temperature reading handler
+        broker.register("temperature", |req: ReadTemperature| async move {
+            let base_temp = 23.5; // Base temperature in Celsius
+            let value = match req.unit {
+                TemperatureUnit::Celsius => base_temp,
+                TemperatureUnit::Fahrenheit => base_temp * 9.0 / 5.0 + 32.0,
+            };
+            let unit = match req.unit {
+                TemperatureUnit::Celsius => "°C",
+                TemperatureUnit::Fahrenheit => "°F",
+            };
+            Ok(SensorReading {
+                value,
+                unit: unit.to_string(),
+                timestamp_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+            })
+        })?;
+
+        // Register humidity reading handler
+        broker.register("humidity", |_req: ReadHumidity| async move {
+            Ok(SensorReading {
+                value: 45.2,
+                unit: "%RH".to_string(),
+                timestamp_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+            })
+        })?;
+
+        // Register pressure reading handler
+        broker.register("pressure", |_req: ReadPressure| async move {
+            Ok(SensorReading {
+                value: 1013.25,
+                unit: "hPa".to_string(),
+                timestamp_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+            })
+        })?;
+
+        let handle = broker.clone().spawn()?;
 
         // Give the server task time to subscribe before returning
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
         Ok(Self {
-            handle,
-            _server: server,
-            transport,
+            _handle: handle,
+            broker,
             node_id,
-            config,
+            hub,
         })
     }
 
     async fn shutdown(self) -> Result<()> {
-        // --
-        // Shutdown server first (signals run loop to exit)
-        self._server.shutdown().await?;
-
-        // Then close transport
-        self.transport.close().await?;
-
-        // Wait for server task to complete
-        self.handle.await.expect("server task panicked")?;
-
+        // ---
+        self.broker.shutdown().await;
         Ok(())
-    }
-
-    fn transport(&self) -> TransportPtr {
-        self.transport.clone()
     }
 
     fn node_id(&self) -> &str {
         &self.node_id
     }
 
-    fn config(&self) -> &RpcConfig {
-        &self.config
+    fn hub(&self) -> Arc<MemoryHub> {
+        self.hub.clone()
     }
+}
+
+/// Create a server-mode transport on the given hub.
+async fn server_transport(node_id: &str, hub: Arc<MemoryHub>) -> Result<TransportPtr> {
+    // ---
+    mom_rpc::create_memory_transport_with_hub(
+        TransportConfig {
+            uri: String::new(),
+            node_id: node_id.into(),
+            mode: TransportMode::Server,
+            request_queue: Some(format!("requests/{node_id}")),
+            response_queue: None,
+            transport_type: None,
+            keep_alive_secs: None,
+        },
+        hub,
+    )
+    .await
+}
+
+/// Create a client-mode transport on the given hub.
+async fn client_transport(node_id: &str, hub: Arc<MemoryHub>) -> Result<TransportPtr> {
+    // ---
+    mom_rpc::create_memory_transport_with_hub(
+        TransportConfig {
+            uri: String::new(),
+            node_id: node_id.into(),
+            mode: TransportMode::Client,
+            request_queue: None,
+            response_queue: Some(format!("responses/{node_id}")),
+            transport_type: None,
+            keep_alive_secs: None,
+        },
+        hub,
+    )
+    .await
 }
 
 #[tokio::test]
 async fn test_basic_request() -> Result<()> {
     // ---
     init_tracing();
+    info!("Starting basic sensor reading test");
 
-    info!("Starting basic request test");
+    let server = SensorServer::new("test_basic_request").await?;
+    let client_transport = client_transport("controller", server.hub()).await?;
+    let client = RpcBrokerBuilder::new(client_transport).build()?;
 
-    let server = MathServer::new("test_basic_request").await?;
-    info!("after MathServer::new");
-
-    let client =
-        RpcClient::with_transport(server.transport(), "Sally", server.config().clone()).await?;
-    info!("after RpcClient::new");
-
-    info!("sending math add 2 3...");
-    let resp: AddResponse = client
-        .request_to(server.node_id(), "add", AddRequest { a: 2, b: 3 })
+    info!("reading temperature in Celsius...");
+    let resp: SensorReading = client
+        .request_to(
+            server.node_id(),
+            "temperature",
+            ReadTemperature {
+                unit: TemperatureUnit::Celsius,
+            },
+        )
         .await?;
-    info!("sending math add 2 3...done");
+    info!("reading temperature in Celsius...done");
 
-    assert_eq!(resp.sum, 5);
-
-    info!("calling server shutdown");
-
+    assert_eq!(resp.value, 23.5);
+    assert_eq!(resp.unit, "°C");
     server.shutdown().await?;
     Ok(())
 }
 
 #[tokio::test]
-async fn test_concurrent_requests() {
+async fn test_concurrent_requests() -> Result<()> {
     // ---
     init_tracing();
 
-    let server = MathServer::new("test_concurrent_requests").await.unwrap();
-    let client = RpcClient::with_transport(server.transport(), "George", server.config().clone())
-        .await
-        .unwrap();
-
+    let server = SensorServer::new("test_concurrent_requests").await?;
     let node_id = server.node_id().to_string();
     let mut handles = Vec::new();
 
     for i in 0..10 {
         // ---
-        let c = client.clone();
+        let transport = client_transport(&format!("controller-{i}"), server.hub()).await?;
+        let client = RpcBrokerBuilder::new(transport).build()?;
         let node_id = node_id.clone();
 
         handles.push(tokio::spawn(async move {
-            let resp: AddResponse = c
-                .request_to(&node_id, "add", AddRequest { a: i, b: i })
+            // Alternate between temperature readings in different units
+            let unit = if i % 2 == 0 {
+                TemperatureUnit::Celsius
+            } else {
+                TemperatureUnit::Fahrenheit
+            };
+            let resp: SensorReading = client
+                .request_to(&node_id, "temperature", ReadTemperature { unit })
                 .await
                 .unwrap();
-            resp.sum
+            (resp.value, resp.unit)
         }));
     }
 
     for (i, task) in handles.into_iter().enumerate() {
-        let sum = task.await.unwrap();
-        assert_eq!(sum, (i as i32) * 2);
+        let (value, unit) = task.await.unwrap();
+        if i % 2 == 0 {
+            assert_eq!(value, 23.5);
+            assert_eq!(unit, "°C");
+        } else {
+            assert_eq!(value, 74.3);
+            assert_eq!(unit, "°F");
+        }
     }
-    server.shutdown().await.unwrap();
+
+    server.shutdown().await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -165,83 +258,112 @@ async fn test_timeout() -> Result<()> {
     // ---
     init_tracing();
 
-    let config = RpcConfig::memory("test_timeout");
-    let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "lazy-math");
+    let hub = MemoryHub::new();
+    let server_node = "slow-sensor";
+    let transport = server_transport(server_node, hub.clone()).await?;
+    let server = RpcBrokerBuilder::new(transport).build()?;
 
-    server.register("add", |req: AddRequest| async move {
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-        Ok(AddResponse { sum: req.a + req.b })
-    });
+    // Register a slow temperature sensor that takes 1 second to respond
+    server.register("temperature", |req: ReadTemperature| async move {
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let value = match req.unit {
+            TemperatureUnit::Celsius => 23.5,
+            TemperatureUnit::Fahrenheit => 74.3,
+        };
+        let unit = match req.unit {
+            TemperatureUnit::Celsius => "°C",
+            TemperatureUnit::Fahrenheit => "°F",
+        };
+        Ok(SensorReading {
+            value,
+            unit: unit.to_string(),
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        })
+    })?;
 
-    let handle = server.spawn();
+    let _handle = server.clone().spawn()?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
 
-    // Give the server task time to subscribe
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let transport = client_transport("controller", hub).await?;
+    let client = RpcBrokerBuilder::new(transport).build()?;
 
-    let client = RpcClient::with_transport(transport.clone(), "Denis", config.clone()).await?;
-
-    info!("test_timeout: sending 1 + 1");
-
-    let fut =
-        client.request_to::<AddRequest, AddResponse>("lazy-math", "add", AddRequest { a: 1, b: 1 });
-
+    info!("test_timeout: reading temperature");
+    let fut = client.request_to::<ReadTemperature, SensorReading>(
+        server_node,
+        "temperature",
+        ReadTemperature {
+            unit: TemperatureUnit::Celsius,
+        },
+    );
     let res = tokio::time::timeout(Duration::from_millis(200), fut).await;
-
     assert!(res.is_err(), "request unexpectedly completed");
-
     info!("test_timeout: {:?}", res);
 
-    info!("test_timeout: shutting down server");
-    server.shutdown().await?;
-
-    info!("test_timeout: closing transport");
-    transport.close().await?;
-
-    info!("test_timeout: join handler");
-    handle.await.expect("test_timeout:: server task panicked")?;
-
+    server.shutdown().await;
     Ok(())
 }
 
 #[tokio::test]
 #[ignore] // TODO: Implement error response protocol
 async fn test_error_response() -> Result<()> {
-    // --
+    // ---
     init_tracing();
 
-    let config = RpcConfig::memory("test_error");
-    let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "error-math");
+    let hub = MemoryHub::new();
+    let server_node = "faulty-sensor";
+    let transport = server_transport(server_node, hub.clone()).await?;
+    let server = RpcBrokerBuilder::new(transport).build()?;
 
-    server.register("divide", |req: AddRequest| async move {
-        if req.b == 0 {
-            return Err(RpcError::InvalidRequest);
+    // Register a sensor that fails for specific conditions
+    server.register("temperature", |req: ReadTemperature| async move {
+        // Simulate sensor malfunction for Fahrenheit readings
+        match req.unit {
+            TemperatureUnit::Fahrenheit => Err(RpcError::InvalidRequest),
+            TemperatureUnit::Celsius => Ok(SensorReading {
+                value: 23.5,
+                unit: "°C".to_string(),
+                timestamp_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+            }),
         }
-        Ok(AddResponse { sum: req.a / req.b })
-    });
+    })?;
 
-    let handle = server.spawn();
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let _handle = server.clone().spawn()?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
 
-    let client =
-        RpcClient::with_transport(transport.clone(), "error-client", config.clone()).await?;
+    let transport = client_transport("controller", hub).await?;
+    let client = RpcBrokerBuilder::new(transport).build()?;
 
     // Test error case
-    let result: Result<AddResponse> = client
-        .request_to("error-math", "divide", AddRequest { a: 10, b: 0 })
+    let result: Result<SensorReading> = client
+        .request_to(
+            server_node,
+            "temperature",
+            ReadTemperature {
+                unit: TemperatureUnit::Fahrenheit,
+            },
+        )
         .await;
-    assert!(result.is_err(), "expected error for division by zero");
+    assert!(result.is_err(), "expected error for Fahrenheit reading");
 
     // Test success case
-    let resp: AddResponse = client
-        .request_to("error-math", "divide", AddRequest { a: 10, b: 2 })
+    let resp: SensorReading = client
+        .request_to(
+            server_node,
+            "temperature",
+            ReadTemperature {
+                unit: TemperatureUnit::Celsius,
+            },
+        )
         .await?;
-    assert_eq!(resp.sum, 5);
+    assert_eq!(resp.value, 23.5);
 
-    server.shutdown().await?;
-    transport.close().await?;
-    handle.await.expect("server task panicked")?;
+    server.shutdown().await;
     Ok(())
 }
 
@@ -250,209 +372,212 @@ async fn test_multiple_clients() -> Result<()> {
     // ---
     init_tracing();
 
-    let config = RpcConfig::memory("test_multi_client");
-    let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "multi-math");
+    let server = SensorServer::new("test_multiple_clients").await?;
+    let node_id = server.node_id().to_string();
 
-    server.register("add", |req: AddRequest| async move {
-        Ok(AddResponse { sum: req.a + req.b })
-    });
+    let t1 = client_transport("controller-1", server.hub()).await?;
+    let t2 = client_transport("controller-2", server.hub()).await?;
+    let t3 = client_transport("controller-3", server.hub()).await?;
 
-    let handle = server.spawn();
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let client1 = RpcBrokerBuilder::new(t1).build()?;
+    let client2 = RpcBrokerBuilder::new(t2).build()?;
+    let client3 = RpcBrokerBuilder::new(t3).build()?;
 
-    // Create 3 separate clients
-    let client1 = RpcClient::with_transport(transport.clone(), "client-1", config.clone()).await?;
-    let client2 = RpcClient::with_transport(transport.clone(), "client-2", config.clone()).await?;
-    let client3 = RpcClient::with_transport(transport.clone(), "client-3", config.clone()).await?;
-
-    // All clients make requests concurrently
     let (r1, r2, r3) = tokio::join!(
-        client1.request_to::<AddRequest, AddResponse>(
-            "multi-math",
-            "add",
-            AddRequest { a: 1, b: 1 }
+        client1.request_to::<ReadTemperature, SensorReading>(
+            &node_id,
+            "temperature",
+            ReadTemperature {
+                unit: TemperatureUnit::Celsius
+            }
         ),
-        client2.request_to::<AddRequest, AddResponse>(
-            "multi-math",
-            "add",
-            AddRequest { a: 2, b: 2 }
-        ),
-        client3.request_to::<AddRequest, AddResponse>(
-            "multi-math",
-            "add",
-            AddRequest { a: 3, b: 3 }
-        ),
+        client2.request_to::<ReadHumidity, SensorReading>(&node_id, "humidity", ReadHumidity),
+        client3.request_to::<ReadPressure, SensorReading>(&node_id, "pressure", ReadPressure),
     );
 
-    assert_eq!(r1?.sum, 2);
-    assert_eq!(r2?.sum, 4);
-    assert_eq!(r3?.sum, 6);
+    let temp_reading = r1?;
+    let humidity_reading = r2?;
+    let pressure_reading = r3?;
+
+    assert_eq!(temp_reading.value, 23.5);
+    assert_eq!(temp_reading.unit, "°C");
+
+    assert_eq!(humidity_reading.value, 45.2);
+    assert_eq!(humidity_reading.unit, "%RH");
+
+    assert_eq!(pressure_reading.value, 1013.25);
+    assert_eq!(pressure_reading.unit, "hPa");
 
     server.shutdown().await?;
-    transport.close().await?;
-    handle.await.expect("server task panicked")?;
-    Ok(())
-}
-
-#[tokio::test]
-#[ignore] // TODO: Implement error response protocol
-async fn test_transport_disconnect() -> Result<()> {
-    // ---
-    init_tracing();
-
-    let config = RpcConfig::memory("test_disconnect");
-    let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "disconnect-math");
-
-    server.register("add", |req: AddRequest| async move {
-        // Slow handler to ensure request is in-flight
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        Ok(AddResponse { sum: req.a + req.b })
-    });
-
-    let handle = server.spawn();
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-
-    let client =
-        RpcClient::with_transport(transport.clone(), "disconnect-client", config.clone()).await?;
-
-    // Start request
-    let fut = client.request_to::<AddRequest, AddResponse>(
-        "disconnect-math",
-        "add",
-        AddRequest { a: 1, b: 1 },
-    );
-
-    // Close transport while request is in-flight
-    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    transport.close().await?;
-
-    // Request should fail
-    let result = fut.await;
-    assert!(result.is_err(), "expected error after transport disconnect");
-
-    handle.await.expect("server task panicked")?;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_request_with_timeout_success() -> Result<()> {
-    let config = RpcConfig::memory("test_timeout_success");
-    let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "timeout-math");
+    // ---
+    init_tracing();
 
-    server.register("add", |req: AddRequest| async move {
-        // Fast handler - should complete before timeout
-        Ok(AddResponse { sum: req.a + req.b })
-    });
+    let server = SensorServer::new("test_timeout_success").await?;
+    let node_id = server.node_id().to_string();
 
-    let handle = server.spawn();
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let transport = client_transport("controller", server.hub()).await?;
+    let client = RpcBrokerBuilder::new(transport).build()?;
 
-    let client =
-        RpcClient::with_transport(transport.clone(), "timeout-client", config.clone()).await?;
-
-    // Request with generous timeout should succeed
-    let resp: AddResponse = client
-        .request_with_timeout(
-            "timeout-math",
-            "add",
-            AddRequest { a: 5, b: 3 },
-            Duration::from_secs(1),
-        )
+    let resp: SensorReading = client
+        .request_to_with_timeout(&node_id, "humidity", ReadHumidity, Duration::from_secs(1))
         .await?;
 
-    assert_eq!(resp.sum, 8);
-
+    assert_eq!(resp.value, 45.2);
+    assert_eq!(resp.unit, "%RH");
     server.shutdown().await?;
-    transport.close().await?;
-    handle.await.expect("server task panicked")?;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_request_with_timeout_expires() -> Result<()> {
-    let config = RpcConfig::memory("test_timeout_expires");
-    let transport = create_memory_transport(&config).await.unwrap();
-    let server = RpcServer::with_transport(transport.clone(), "slow-math");
+    // ---
+    init_tracing();
 
-    server.register("add", |req: AddRequest| async move {
-        // Slow handler - intentionally longer than timeout
+    let hub = MemoryHub::new();
+    let server_node = "slow-sensor-2";
+
+    let transport = server_transport(server_node, hub.clone()).await?;
+    let server = RpcBrokerBuilder::new(transport).build()?;
+
+    // Register a slow pressure sensor
+    server.register("pressure", |_req: ReadPressure| async move {
         tokio::time::sleep(Duration::from_millis(200)).await;
-        Ok(AddResponse { sum: req.a + req.b })
-    });
+        Ok(SensorReading {
+            value: 1013.25,
+            unit: "hPa".to_string(),
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        })
+    })?;
 
-    let handle = server.spawn();
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let _handle = server.clone().spawn()?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
 
-    let client = RpcClient::with_transport(transport.clone(), "timeout-client-2", config.clone())
-        .await
-        .unwrap();
+    let transport = client_transport("controller", hub).await?;
+    let client = RpcBrokerBuilder::new(transport).build()?;
 
-    // Request with very short timeout should fail
-    let result: Result<AddResponse> = client
-        .request_with_timeout(
-            "slow-math",
-            "add",
-            AddRequest { a: 5, b: 3 },
-            Duration::from_millis(50), // Timeout before handler completes
+    let result: Result<SensorReading> = client
+        .request_to_with_timeout(
+            server_node,
+            "pressure",
+            ReadPressure,
+            Duration::from_millis(50),
         )
         .await;
 
     match result {
-        Err(RpcError::Timeout) => {
-            // Expected - timeout occurred
-        }
-        Ok(_) => {
-            eprintln!("expected timeout but request succeeded");
-            return Err(RpcError::InvalidResponse);
-        }
-        Err(e) => {
-            println!("expected Timeout error but got: {e}");
-            return Err(RpcError::InvalidResponse);
-        }
+        Err(RpcError::Timeout) => {}
+        Ok(_) => panic!("expected timeout but request succeeded"),
+        Err(e) => panic!("expected Timeout error but got: {e}"),
     }
 
-    server.shutdown().await?;
-    transport.close().await?;
-    handle.await.expect("server task panicked")?;
+    server.shutdown().await;
     Ok(())
 }
-
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
 
 #[tokio::test]
 async fn test_run_blocks_until_shutdown() -> Result<()> {
     // ---
-    let config = RpcConfig::memory("test_run_blocks");
-    let transport = create_memory_transport(&config).await?;
-    let server = RpcServer::with_transport(transport.clone(), "run-math");
+    use std::sync::atomic::{AtomicBool, Ordering};
+    init_tracing();
 
-    server.register("add", |req: AddRequest| async move {
-        Ok(AddResponse { sum: req.a + req.b })
-    });
+    let hub = MemoryHub::new();
+    let node_id = "sensor-hub";
+    let transport = server_transport(node_id, hub).await?;
+    let broker = RpcBrokerBuilder::new(transport).build()?;
+
+    broker.register("temperature", |req: ReadTemperature| async move {
+        let value = match req.unit {
+            TemperatureUnit::Celsius => 23.5,
+            TemperatureUnit::Fahrenheit => 74.3,
+        };
+        let unit = match req.unit {
+            TemperatureUnit::Celsius => "°C",
+            TemperatureUnit::Fahrenheit => "°F",
+        };
+        Ok(SensorReading {
+            value,
+            unit: unit.to_string(),
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        })
+    })?;
 
     let shutdown_called = Arc::new(AtomicBool::new(false));
     let shutdown_called_clone = shutdown_called.clone();
-    let server_clone = server.clone();
+    let broker_clone = broker.clone();
+
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(50)).await;
         shutdown_called_clone.store(true, Ordering::SeqCst);
-        server_clone.shutdown().await.expect("shutdown failed");
+        broker_clone.shutdown().await;
     });
 
-    server.run().await?;
+    broker.run().await?;
 
     assert!(
         shutdown_called.load(Ordering::SeqCst),
         "run() returned before shutdown() was called"
     );
+    Ok(())
+}
 
-    transport.close().await?;
+/// Verify that TransportBuilder without an explicit transport_type falls back to
+/// memory transport when no broker transport features are enabled.
+#[cfg(not(any(
+    feature = "transport_rumqttc",
+    feature = "transport_lapin",
+    feature = "transport_dust_dds"
+)))]
+#[tokio::test]
+async fn test_transport_builder_fallback_to_memory() -> Result<()> {
+    // ---
+    init_tracing();
+
+    // With no transport_type set, the builder tries dust_dds → rumqttc → lapin → memory.
+    // In the default feature set (no broker transports enabled), all three broker
+    // factories return Err immediately via Null Object stubs, so memory is used.
+    let transport = TransportBuilder::new()
+        .uri("memory://")
+        .node_id("fallback-test")
+        .full_duplex()
+        .build()
+        .await?;
+
+    // Verify we got a working memory transport by doing a basic pub/sub round-trip
+    use bytes::Bytes;
+    use mom_rpc::{Address, Envelope, Subscription};
+
+    let sub = transport
+        .subscribe(Subscription::from("fallback/test"))
+        .await?;
+
+    let env = Envelope::response(
+        Address::from("fallback/test"),
+        Bytes::from_static(b"hello"),
+        "corr-1".into(),
+        "application/json".into(),
+    );
+    transport.publish(env).await?;
+
+    let received = tokio::time::timeout(Duration::from_millis(100), {
+        let mut sub = sub;
+        async move { sub.inbox.recv().await }
+    })
+    .await
+    .expect("timed out")
+    .expect("channel closed");
+
+    assert_eq!(received.payload, Bytes::from_static(b"hello"));
     Ok(())
 }
 

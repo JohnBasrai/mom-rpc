@@ -25,7 +25,7 @@ The architecture follows an **Explicit Module Boundary Pattern (EMBP)** througho
 ```
    ┌─────────────────────────────┐
    │         User Code           │
-   │  (RpcClient / RpcServer)    │
+   │       (RpcBroker)           │
    └───────────────▲─────────────┘
                    │
    ┌───────────────┴─────────────┐
@@ -309,38 +309,31 @@ This allows:
 
 ---
 
-## RpcClient
+## RpcBroker
 
-The client API:
+`RpcBroker` is the unified entry point for all RPC operations. It replaces the separate `RpcClient` and `RpcServer` types from 0.7.x.
 
-* Creates RPC requests
-* Manages correlation and pending responses
-* Serializes request payloads
-* Deserializes response payloads
-
-The client:
+The broker:
 
 * Owns exactly one transport instance
+* Infers its operational mode (client, server, or full-duplex) from the queue configuration supplied to `TransportBuilder`
+* Validates operations at runtime against its mode, returning `Err(RpcError::InvalidMode)` for disallowed calls
+
+Mode is determined by which queues were subscribed during transport construction:
+
+* `response_queue` only → `Mode::Client`
+* `request_queue` only → `Mode::Server`
+* Both queues → `Mode::FullDuplex`
+
+### Client operations (`Mode::Client` or `Mode::FullDuplex`)
+
+* Creates and sends RPC requests via `request_to()`
+* Manages correlation IDs and pending responses
 * Subscribes to a private response address: `responses/{node_id}`
-* Spawns a receive loop during construction (automatically running when created)
-* Uses async/await for request handling
-* Does not require callbacks
 
-**Lifecycle:**
-* `RpcClient::new()` or `RpcClient::with_transport()` returns a ready-to-use client
-* The receive loop spawns automatically and runs until the transport closes
-* No explicit "start" method needed
+### Server operations (`Mode::Server` or `Mode::FullDuplex`)
 
-Timeouts and retries are intentionally out of scope for the initial release.
-
----
-
-## RpcServer
-
-The server:
-
-* Owns exactly one transport instance
-* Registers typed method handlers
+* Registers typed method handlers via `register()`
 * Subscribes to incoming request address: `requests/{node_id}`
 * Dispatches based on `Envelope.method`
 * Publishes responses using `reply_to` and `correlation_id`
@@ -348,12 +341,37 @@ The server:
 Handlers are type-erased internally but strongly typed at registration time.
 
 **Lifecycle:**
-1. Create server via `RpcServer::with_transport(transport, node_id)`
-2. Register handlers via `register(method, handler)`
-3. Start processing via `run()` which returns a `JoinHandle`
-4. The receive loop runs until the transport closes
+1. Build transport via `TransportBuilder` (determines mode)
+2. Build broker via `RpcBrokerBuilder::new(transport).build()`
+3. Register handlers via `register(method, handler)?` (server/full-duplex)
+4. Start processing via `spawn()` or `run()` (server/full-duplex)
 
-The explicit `run()` method ensures handlers are registered before requests can be processed.
+**Construction:**
+```rust
+// Client mode
+let transport = TransportBuilder::new()
+    .uri("mqtt://localhost:1883")
+    .node_id("sensor-client")
+    .response_queue("responses/sensor-client")
+    .build()
+    .await?;
+
+let client = RpcBrokerBuilder::new(transport).build();
+
+// Server mode
+let transport = TransportBuilder::new()
+    .uri("mqtt://localhost:1883")
+    .node_id("server-42")
+    .request_queue("requests/server-42")
+    .build()
+    .await?;
+
+let server = RpcBrokerBuilder::new(transport).build();
+server.register("read_temp", |req: ReadTemp| async {
+    Ok(SensorReading { value: 21.5, unit: "C".into(), timestamp_ms: 0 })
+})?;
+server.spawn();
+```
 
 ---
 
@@ -421,7 +439,6 @@ Potential future extensions include:
 * Additional transport implementations (Kafka, NATS, etc.)
 * Optional response caching for idempotent requests
 * Pluggable retry / timeout policies
-* Full-duplex client/server unification
 
 None of these are required for the current architecture.
 

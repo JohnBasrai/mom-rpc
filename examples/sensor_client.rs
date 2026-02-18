@@ -11,7 +11,7 @@
 mod common;
 
 use common::{
-    //
+    // ---
     ReadHumidity,
     ReadPressure,
     ReadTemperature,
@@ -19,12 +19,10 @@ use common::{
     TemperatureUnit,
 };
 use mom_rpc::{
-    //
-    create_transport,
+    // ---
     Result,
-    RetryConfig,
-    RpcClient,
-    RpcConfig,
+    RpcBrokerBuilder,
+    TransportBuilder,
 };
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
@@ -42,26 +40,25 @@ async fn main() -> Result<()> {
     let broker_uri =
         std::env::var("BROKER_URI").unwrap_or_else(|_| "mqtt://localhost:1883".to_string());
 
-    let retry_config = RetryConfig {
-        max_attempts: 20,
-        multiplier: 2.0,
-        initial_delay: Duration::from_millis(200),
-        max_delay: Duration::from_millis(1000),
-    };
-
-    let config = RpcConfig::with_broker(&broker_uri, "sensor-client")
-        .with_retry(retry_config)
-        .with_request_timeout(Duration::from_millis(200));
+    let transport = TransportBuilder::new()
+        .uri(&broker_uri)
+        .node_id("sensor-client")
+        .client_mode()
+        .build()
+        .await?;
 
     // Each request attempt:
     // - Publishes request
     // - Waits up to 200ms for response
     // - On timeout → returns TransportRetryable → retry kicks in
     // - Delay between retries: 200ms → 400ms → 800ms → 1000ms (capped)
-
-    let transport = create_transport(&config).await?;
-
-    let client = RpcClient::with_transport(transport.clone(), "client-1", config).await?;
+    let client = RpcBrokerBuilder::new(transport.clone())
+        .retry_max_attempts(20)
+        .retry_multiplier(2.)
+        .retry_initial_delay(Duration::from_millis(200))
+        .retry_max_delay(Duration::from_millis(1000))
+        .request_timeout(Duration::from_millis(200))
+        .build()?;
 
     let temp: SensorReading = client
         .request_to(

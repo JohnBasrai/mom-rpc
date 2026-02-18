@@ -1,8 +1,9 @@
 //! Transport-agnostic async RPC over message-oriented middleware.
 //!
-//! This library provides a simple, ergonomic API for implementing RPC patterns
-//! over unreliable pub/sub systems like MQTT. It handles correlation ID generation,
-//! request/response matching, timeout handling, and concurrent request processing.
+//! This library provides a unified `RpcBroker` type for implementing RPC patterns
+//! over pub/sub systems like MQTT, AMQP, and DDS. It handles correlation ID
+//! generation, request/response matching, timeout handling, and concurrent
+//! request processing.
 //!
 //! # Supported Transports
 //!
@@ -19,12 +20,13 @@
 //!
 //! ```toml
 //! [dependencies]
-//! mom-rpc = { version = "0.7", default-features = false, features = ["transport_rumqttc"] }
+//! mom-rpc = { version = "0.8", default-features = false, features = ["transport_rumqttc"] }
 //! ```
+//!
 //! # Quick Start
 //!
 //! ```no_run
-//! use mom_rpc::{create_transport, RpcClient, RpcConfig, RpcServer, Result};
+//! use mom_rpc::{TransportBuilder, RpcBrokerBuilder, Result};
 //! use serde::{Deserialize, Serialize};
 //!
 //! #[derive(Debug, Serialize, Deserialize)]
@@ -39,21 +41,25 @@
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
 //!     //
-//!     let config = RpcConfig::memory("sensor");
-//!     let transport = create_transport(&config).await?;
+//!     let transport = TransportBuilder::new()
+//!         .uri("memory://")
+//!         .node_id("env-sensor-42")
+//!         .full_duplex()
+//!         .build()
+//!         .await?;
 //!
-//!     let server = RpcServer::with_transport(transport.clone(), "env-sensor-42");
+//!     let server = RpcBrokerBuilder::new(transport.clone()).build()?;
 //!     server.register("read_temperature", |req: ReadTemperature| async move {
-//!         let celsius = 22.0_f32; // Simulate reading hw sensor
+//!         let celsius = 22.0_f32;
 //!         let (value, unit) = match req.unit {
 //!             TemperatureUnit::Celsius => (celsius, "C"),
 //!             TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
 //!         };
 //!         Ok(SensorReading { value, unit: unit.to_string(), timestamp_ms: 0 })
-//!     });
-//!     let _handle = server.spawn();
+//!     })?;
+//!     let _handle = server.spawn()?;
 //!
-//!     let client = RpcClient::with_transport(transport.clone(), "client-1", config).await?;
+//!     let client = RpcBrokerBuilder::new(transport).build()?;
 //!     let resp: SensorReading = client
 //!         .request_to("env-sensor-42", "read_temperature", ReadTemperature {
 //!             unit: TemperatureUnit::Celsius,
@@ -67,9 +73,6 @@
 //! # Examples
 //!
 //! See the [examples/](https://github.com/JohnBasrai/mom-rpc/blob/main/examples/)
-//! - `sensor_memory.rs` - In-memory transport (no broker needed)
-//! - `sensor_server.rs` - Transport-agnostic server example
-//! - `sensor_client.rs` - Transport-agnostic client example
 
 #![cfg_attr(
     test,
@@ -81,190 +84,69 @@
     )
 )]
 
-// Import all sub modules once...
-mod client;
-mod domain;
-mod server;
-mod transport;
+////////////////////////////////////////
+// Submodules
+////////////////////////////////////////
 
-mod rpc_config;
+mod broker;
+mod broker_builder;
+mod broker_mode;
+mod domain;
+mod retry;
+mod transport;
+mod transport_builder;
 
 mod correlation;
 mod error;
 
-// Re-export main types
-pub(crate) use client::retry_with_backoff;
-pub use client::RpcClient;
-pub use server::RpcServer;
+////////////////////////////////////////
+// Public API
+////////////////////////////////////////
 
-pub use rpc_config::{RetryConfig, RpcConfig};
+pub use broker::RpcBroker;
+pub use broker_builder::RpcBrokerBuilder;
+pub use broker_mode::BrokerMode;
+pub(crate) use retry::RetryConfig;
+pub use transport_builder::TransportBuilder;
 
 pub use correlation::CorrelationId;
 pub use error::{Result, RpcError};
 
-/// Create an in-memory transport.
-///
-/// This transport is always available (not feature-gated) and requires no
-/// external resources.
-pub use transport::create_memory_transport;
-
-#[doc(hidden)]
-#[cfg(feature = "transport_rumqttc")]
-pub use transport::create_rumqttc_transport;
-
-#[doc(hidden)]
-#[cfg(feature = "transport_lapin")]
-use transport::create_lapin_transport;
-
-#[doc(hidden)]
-#[cfg(feature = "transport_dust_dds")]
-use transport::create_dust_dds_transport;
-
-// --- public re-exports
 pub use domain::{
-    //
+    // ---
     Address,
     Envelope,
     Subscription,
     SubscriptionHandle,
     Transport,
+    TransportBase,
+    TransportConfig,
+    TransportMode,
     TransportPtr,
 };
 
-/// Create a transport based on the provided configuration and enabled features.
-///
-/// **Best for:** Applications with a single transport feature enabled.
-///
-/// When multiple transport features are enabled, auto-selects based on priority:
-/// 1. `transport_dust_dds` - DDS via dust_dds
-/// 2. `transport_rumqttc`  - MQTT via rumqttc
-/// 3. `transport_lapin`    - AMQP via lapin
-/// 4. `memory` (always available)
-///
-/// **For multi-transport applications:** Use `create_transport_for()` to explicitly
-/// select the transport at runtime instead of relying on this priority order.
-///
-/// # Examples
-///
-/// ```no_run
-/// use mom_rpc::{create_transport, RpcConfig};
-///
-/// #[tokio::main]
-/// async fn main() -> mom_rpc::Result<()> {
-///     // Memory transport (default, no features needed)
-///     let config = RpcConfig::memory("my-app");
-///     let transport = create_transport(&config).await?;
-///
-///     // MQTT transport (requires transport_rumqttc feature)
-///     let config = RpcConfig::with_broker("mqtt://localhost:1883", "my-app");
-///     let transport = create_transport(&config).await?;
-///
-///     // AMQP transport (requires transport_lapin feature)
-///     let config = RpcConfig::with_broker("amqp://localhost:5672/%2f", "my-app");
-///     let transport = create_transport(&config).await?;
-///
-///     Ok(())
-/// }
-/// ```
-///
-/// # Errors
-///
-/// Returns `RpcError::Transport` if:
-/// - Broker URI is invalid or malformed
-/// - Transport-specific initialization fails (connection, authentication, etc.)
-pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
-    // ---
+////////////////////////////////////////
+// Transport factory functions
+////////////////////////////////////////
 
-    #[cfg(feature = "transport_rumqttc")]
-    return create_rumqttc_transport(config).await;
+// Memory transport testing utilities
+// WARNING: MemoryHub and create_memory_transport_with_hub are exposed only for
+// mom-rpc's own integration tests and may change without notice.
+// Production code should use TransportBuilder.
+pub use transport::create_memory_transport_with_hub;
+pub use transport::MemoryHub;
 
-    #[cfg(all(feature = "transport_lapin", not(feature = "transport_rumqttc")))]
-    return create_lapin_transport(config).await;
+// Protocol transport factories - internal only; users go through TransportBuilder
+pub(crate) use transport::create_dust_dds_transport;
+pub(crate) use transport::create_lapin_transport;
+pub(crate) use transport::create_memory_transport;
+pub(crate) use transport::create_rumqttc_transport;
 
-    #[cfg(all(
-        feature = "transport_dust_dds",
-        not(any(feature = "transport_rumqttc", feature = "transport_lapin"))
-    ))]
-    return create_dust_dds_transport(config).await;
+////////////////////////////////////////
+// Internal helpers
+////////////////////////////////////////
 
-    // Fallback / default
-    #[cfg(not(any(
-        feature = "transport_rumqttc",
-        feature = "transport_lapin",
-        feature = "transport_dust_dds"
-    )))]
-    create_memory_transport(config).await
-}
-
-/// Creates a transport based on a runtime string flag.
-///
-/// Allows applications to select between multiple compiled transports at runtime.
-/// The transport must be enabled via feature flags at compile time.
-///
-/// # Arguments
-/// * `flag`   - Transport name: "memory", "dust-dds", "rumqttc", or "lapin"
-/// * `config` - Transport configuration
-///
-/// # Errors
-///
-/// Returns `RpcError::Transport` if:
-/// - The specified transport is not enabled via feature flags
-/// - The transport name is unrecognized
-/// - The broker URI format is invalid
-/// - Transport initialization fails (connection, authentication, etc.)
-///
-/// # Examples
-///
-/// ```no_run
-/// use mom_rpc::{create_transport_for, RpcConfig, Result};
-///
-/// #[tokio::main]
-/// async fn main() -> Result<()> {
-///     // Build config normally
-///     let config = RpcConfig::with_broker("mqtt://localhost:1883", "my-app");
-///
-///     // Explicit runtime selection (requires feature enabled)
-///     let transport = create_transport_for("rumqttc", &config).await?;
-///
-///     Ok(())
-/// }
-/// ```
-pub async fn create_transport_for(flag: &str, config: &RpcConfig) -> Result<TransportPtr> {
-    // ---
-    let _not_enabled = format!("transport_{flag} feature not enabled");
-
-    match flag {
-        "dust-dds" => {
-            #[cfg(feature = "transport_dust_dds")]
-            return create_dust_dds_transport(config).await;
-
-            #[cfg(not(feature = "transport_dust_dds"))]
-            return Err(RpcError::Transport(_not_enabled));
-        }
-        "rumqttc" => {
-            #[cfg(feature = "transport_rumqttc")]
-            return create_rumqttc_transport(config).await;
-
-            #[cfg(not(feature = "transport_rumqttc"))]
-            return Err(RpcError::Transport(_not_enabled));
-        }
-        "lapin" => {
-            #[cfg(feature = "transport_lapin")]
-            return create_lapin_transport(config).await;
-
-            #[cfg(not(feature = "transport_lapin"))]
-            return Err(RpcError::Transport(_not_enabled));
-        }
-        "memory" => create_memory_transport(config).await,
-        _ => Err(RpcError::Transport(format!(
-            "unrecognized transport: {flag}, valid values: memory, dust-dds, rumqttc, lapin"
-        ))),
-    }
-}
-
-// src/lib.rs
-// ---
-// Internal infrastructure
+pub(crate) use retry::retry_with_backoff;
 
 mod macros;
 pub(crate) use macros::{log_debug, log_error, log_info, log_warn};

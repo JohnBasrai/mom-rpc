@@ -82,11 +82,12 @@ use crate::{
     log_info,
     Envelope,
     Result,
-    RpcConfig,
     RpcError,
     Subscription,
     SubscriptionHandle,
     Transport,
+    TransportBase,
+    TransportConfig,
     TransportPtr,
 };
 
@@ -162,7 +163,7 @@ impl Cmd {
 /// Connection to the broker happens lazily when the EventLoop begins polling.
 pub struct RumqttcTransport {
     // ---
-    transport_id: String,
+    base: TransportBase,
     cmd_tx: mpsc::Sender<Cmd>,
     subscribers: SubscriberMap,
     tasks: TaskList,
@@ -175,14 +176,10 @@ impl RumqttcTransport {
     ///
     /// This function is infallible - the actual broker connection happens
     /// lazily when the EventLoop starts polling in the background actor.
-    pub fn create(
-        transport_id: impl Into<String>,
-        client: AsyncClient,
-        event_loop: EventLoop,
-    ) -> TransportPtr {
+    pub fn create(base: TransportBase, client: AsyncClient, event_loop: EventLoop) -> TransportPtr {
         // ---
 
-        let transport_id = transport_id.into();
+        let transport_id = base.transport_id.clone();
 
         let (cmd_tx, cmd_rx) = mpsc::channel(64);
         let subscribers = Arc::new(RwLock::new(HashMap::new()));
@@ -207,7 +204,7 @@ impl RumqttcTransport {
         });
 
         Arc::new(Self {
-            transport_id,
+            base,
             cmd_tx,
             subscribers,
             tasks,
@@ -512,9 +509,8 @@ fn is_disconnect(err: &rumqttc::ConnectionError) -> bool {
 impl Transport for RumqttcTransport {
     // ---
 
-    fn transport_id(&self) -> &str {
-        // ---
-        &self.transport_id
+    fn base(&self) -> &TransportBase {
+        &self.base
     }
 
     async fn publish(&self, env: Envelope) -> Result<()> {
@@ -597,12 +593,12 @@ impl Transport for RumqttcTransport {
 ///
 /// The actual connection to the broker happens lazily when the EventLoop
 /// starts polling in the background actor task.
-pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
+pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
     // ---
 
-    let (client, event_loop) = create_mqtt_client(config)?;
+    let (client, event_loop) = create_mqtt_client(&config)?;
     Ok(RumqttcTransport::create(
-        &config.transport_id,
+        TransportBase::from(&config),
         client,
         event_loop,
     ))
@@ -612,14 +608,16 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
 ///
 /// This function is fallible only due to URL parsing. The `AsyncClient::new()`
 /// call itself is infallible - connection happens lazily on first poll.
-fn create_mqtt_client(config: &RpcConfig) -> Result<(AsyncClient, EventLoop)> {
+fn create_mqtt_client(config: &TransportConfig) -> Result<(AsyncClient, EventLoop)> {
     // ---
 
-    let transport_uri = config
-        .transport_uri
-        .as_deref()
-        .ok_or_else(|| RpcError::Transport("MQTT transport requires transport_uri".to_string()))?;
-    let client_id = &config.transport_id;
+    let transport_uri = &config.uri;
+    if transport_uri.is_empty() {
+        return Err(RpcError::Transport(
+            "MQTT transport requires URI".to_string(),
+        ));
+    }
+    let client_id = &config.node_id;
 
     // Parse broker address (e.g., "mqtt://localhost:1883")
     let url = transport_uri

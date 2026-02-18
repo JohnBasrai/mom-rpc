@@ -94,11 +94,12 @@ use crate::{
     log_info,
     Envelope,
     Result,
-    RpcConfig,
     RpcError,
     Subscription,
     SubscriptionHandle,
     Transport,
+    TransportBase,
+    TransportConfig,
     TransportPtr,
 };
 
@@ -245,7 +246,7 @@ impl Cmd {
 /// non-durable message delivery consistent with other transports' semantics.
 pub struct DustddsTransport {
     // ---
-    transport_id: String,
+    base: TransportBase,
     cmd_tx: mpsc::Sender<Cmd>,
     subscribers: SubscriberMap,
     tasks: TaskList,
@@ -256,12 +257,12 @@ impl DustddsTransport {
 
     /// Creates a new dust_dds transport with the given `DomainParticipant`.
     pub fn create(
-        transport_id: impl Into<String>,
+        base: TransportBase,
         participant: DomainParticipantAsync<StdRuntime>,
     ) -> TransportPtr {
         // ---
 
-        let transport_id = transport_id.into();
+        let transport_id = base.transport_id.clone();
 
         let (cmd_tx, cmd_rx) = mpsc::channel(64);
         let subscribers = Arc::new(RwLock::new(HashMap::new()));
@@ -287,7 +288,7 @@ impl DustddsTransport {
         });
 
         Arc::new(Self {
-            transport_id,
+            base,
             cmd_tx,
             subscribers,
             tasks,
@@ -731,9 +732,8 @@ fn build_rpc_reader_qos() -> DataReaderQos {
 impl Transport for DustddsTransport {
     // ---
 
-    fn transport_id(&self) -> &str {
-        // ---
-        &self.transport_id
+    fn base(&self) -> &TransportBase {
+        &self.base
     }
 
     async fn publish(&self, env: Envelope) -> Result<()> {
@@ -742,7 +742,7 @@ impl Transport for DustddsTransport {
 
         log_debug!(
             "{}: publish() enqueue for topic {}",
-            self.transport_id,
+            self.transport_id(),
             topic
         );
 
@@ -758,25 +758,25 @@ impl Transport for DustddsTransport {
             .map_err(|e| {
                 RpcError::Transport(format!(
                     "{}: actor command channel closed: {e}",
-                    self.transport_id
+                    self.transport_id()
                 ))
             })?;
 
         log_debug!(
             "{}: publish() waiting for Publish response from actor for {topic}...",
-            self.transport_id,
+            self.transport_id(),
         );
 
         let status = rx.await.map_err(|e| {
             RpcError::Transport(format!(
                 "{}: actor responder channel read failed: {e}",
-                self.transport_id
+                self.transport_id()
             ))
         })?;
 
         log_debug!(
             "{}: publish() waiting for Publish response from actor for {topic}...done, status:{status:?}",
-            self.transport_id,
+            self.transport_id(),
         );
         Ok(())
     }
@@ -787,7 +787,7 @@ impl Transport for DustddsTransport {
         let topic = sub.0.as_ref().to_string();
         log_debug!(
             "{}: subscribe() called for topic {topic}",
-            self.transport_id,
+            self.transport_id(),
         );
 
         let (tx, rx) = mpsc::channel(16);
@@ -844,11 +844,16 @@ impl Transport for DustddsTransport {
 /// # Errors
 ///
 /// Returns an error if `DomainParticipant` creation fails.
-pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
+pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
     // ---
 
-    // Parse domain ID from transport_uri (format: dds:45)
-    let domain_id = parse_domain_id(config.transport_uri.as_deref())?;
+    // Parse domain ID from URI (format: dds:45)
+    let uri_opt = if config.uri.is_empty() {
+        None
+    } else {
+        Some(config.uri.as_str())
+    };
+    let domain_id = parse_domain_id(uri_opt)?;
 
     // Get the singleton factory instance for StdRuntime
     let participant_factory = DomainParticipantFactoryAsync::get_instance();
@@ -864,11 +869,14 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
 
     log_info!(
         "{}: created DomainParticipant on domain {}",
-        config.transport_id,
+        config.node_id,
         domain_id
     );
 
-    Ok(DustddsTransport::create(&config.transport_id, participant))
+    Ok(DustddsTransport::create(
+        TransportBase::from(&config),
+        participant,
+    ))
 }
 
 /// Parses domain ID from `transport_uri`.

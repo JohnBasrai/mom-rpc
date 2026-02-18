@@ -35,12 +35,12 @@ echo ""
 
 # 2. Feature matrix testing
 echo "==> Feature Matrix"
-run_test "default features" "default"
-run_test "rumqttc" "transport_rumqttc"
-run_test "lapin" "transport_lapin"
-run_test "dust_dds" "transport_dust_dds"
+run_test "default features"    "default"
+run_test "rumqttc"             "transport_rumqttc"
+run_test "lapin"               "transport_lapin"
+run_test "dust_dds"            "transport_dust_dds"
 run_test "no default features" "no-default-features"
-run_test "all features" "all-features"
+run_test "all features"        "all-features"
 
 # 3. Documentation
 echo "==> Documentation"

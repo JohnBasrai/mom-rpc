@@ -15,7 +15,9 @@ use mom_rpc::{
     Address,
     CorrelationId,
     Envelope,
-    RpcConfig,
+    MemoryHub,
+    TransportConfig,
+    TransportMode,
 };
 
 #[tokio::test]
@@ -23,9 +25,19 @@ async fn memory_subscribe_then_publish_delivers() {
     // ---
     // Arrange
     // ---
-    let config = RpcConfig::memory("mstpd");
+    let hub = MemoryHub::new();
 
-    let transport = mom_rpc::create_memory_transport(&config)
+    let config = TransportConfig {
+        uri: String::new(),
+        node_id: "mstpd".into(),
+        mode: TransportMode::FullDuplex,
+        request_queue: None,
+        response_queue: None,
+        transport_type: None,
+        keep_alive_secs: None,
+    };
+
+    let transport = mom_rpc::create_memory_transport_with_hub(config, hub)
         .await
         .expect("failed to create memory transport");
 

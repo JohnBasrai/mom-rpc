@@ -14,35 +14,33 @@ This project uses the [Explicit Module Boundary Pattern (EMBP)](https://github.c
 ## mom-rpc Module Structure
 
 ```
-src/
-├── lib.rs              # Public API exports
-├── error.rs            # Error types
-├── rpc_config.rs       # Configuration
-├── correlation.rs      # Correlation ID handling
-├── domain/             # Domain types and traits
-│   ├── mod.rs          # Gateway: Transport trait, core types
-│   └── transport.rs    # Transport abstraction
-├── client/             # RPC client
-│   ├── mod.rs          # Gateway: RpcClient
-│   ├── pending.rs      # In-flight request tracking
-│   └── rpc_client.rs   # RpcClient implementation
-├── server/             # RPC server
-│   ├── mod.rs          # Gateway: RpcServer
-│   ├── rpc_server.rs   # RpcServer implementation
-│   └── handler.rs      # Handler execution
-└── transport/          # Transport implementations
-    ├── mod.rs          # Top-level gateway, exports all transports
-    ├── memory.rs       # In-memory transport (always available)
-    ├── mqtt/           # MQTT protocol transports
-    │   ├── mod.rs      # Protocol gateway (EMBP)
-    │   └── rumqttc.rs  # MQTT via rumqttc library
-    ├── amqp/           # AMQP protocol transports
-    │    ├── mod.rs     # Protocol gateway (EMBP)
-    │    └── lapin.rs   # AMQP via lapin library
-    └── dds/            # AMQP protocol transports
-        ├── mod.rs      # Protocol gateway (EMBP)
-        ├── dust_dds.rs # DDS via dust_dds
-        └── README.md   # DDS design notes
+src
+├── lib.rs               # Public API exports
+├── broker_builder.rs    # RPC broker builder
+├── broker_mode.rs       # Broker mode enumeration
+├── broker.rs            # FullDuplex RPC broker
+├── correlation.rs       # Correlation ID handling
+├── error.rs             # Errors surfaced by the RPC layer
+├── macros.rs            # Global shared logging macros
+├── retry.rs             # Retry configuration and exponential backoff logic
+├── transport_builder.rs # Transport builder for creating transport instances
+├── domain               # Domain types and traits
+│   ├── mod.rs           # Gateway: Transport trait, core types
+│   └── transport.rs     # Transport abstraction
+└── transport            # Transport implementations
+    ├── mod.rs           # Protocol gateway (EMBP)
+    ├── amqp             # AMQP protocol transports
+    │   ├── lapin.rs     # AMQP via lapin library
+    │   └── mod.rs       # Protocol gateway (EMBP)
+    ├── dds              # DDS protocol transports
+    │   ├── mod.rs       # Protocol gateway (EMBP)
+    │   ├── dust_dds.rs  # DDS via dust_dds library
+    │   └── README.md    # DDS design notes
+    ├── memory.rs        # In-memory transport (always available)
+    └── mqtt             # MQTT protocol transports
+        ├── mod.rs       # Protocol gateway (EMBP)
+        └── rumqttc.rs   # MQTT via rumqttc library
+
 ```
 
 ## Transport Organization
@@ -70,15 +68,17 @@ For import guidelines see the _EMBP documentation_ linked at the top of this doc
 - Core domain types: `Envelope`, `Address`, `Subscription`
 - No business logic, only contracts
 
-### client/
-- `RpcClient` - Send requests, receive responses
-- Manages correlation IDs and pending requests
-- Handles response routing
+### broker/
+- `RpcBroker` - Unified type for client, server, and full-duplex modes
+- Mode inference from transport queue configuration
+- Handler registration and execution (server/full-duplex)
+- Request/response correlation (client/full-duplex)
+- Runtime mode validation
 
-### server/
-- `RpcServer` - Receive requests, dispatch to handlers
-- Handler registration and execution
-- Response publishing
+### transport_builder/
+- `TransportBuilder` - Configures and constructs transport instances
+- Determines broker mode from queue subscriptions
+- Delegates actual transport creation to `transport/`
 
 ### transport/
 - Transport implementations
