@@ -359,7 +359,7 @@ Applications can also run multiple transports concurrently (e.g., MQTT for IoT d
 | AMQP      | `transport_lapin`    | 313 | RabbitMQ, enterprise messaging |
 | MQTT      | `transport_rumqttc`  | 418 | IoT, lightweight pub/sub |
 | DDS       | `transport_dust_dds` | 703 | Real-time, mission-critical |
-| REDIS     | `transport_redis`    | 368 | REDIS In-memory pub/sub, low-latency messaging |
+| Redis     | `transport_redis`    | 368 | In-memory pub/sub, low-latency messaging |
 
 **Notes:**
  - *Core library: 1,402 lines, including In-memory.
