@@ -7,6 +7,19 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.9.1] - 2026-03-07
+
+### Changed
+
+- Renamed Redis transport internal fields `pubsub_sink`/`pubsub_stream` → `subscribe_sink`/`subscribe_stream`
+  for naming consistency with `publish_conn` and clearer intent
+- Updated `docs/architecture.md`: added Redis `<details>` block consistent with MQTT, AMQP, and DDS sections
+- Updated `src/transport/redis/README.md`: field names and struct layout reflect rename
+- README prose and heading improvements (description, section titles, table alignment)
+- `scripts/sloc-count.sh`: fixed missing closing `*` in markdown footnote
+
+---
+
 ## [0.9.0] - 2026-02-19
 
 ### Added

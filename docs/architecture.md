@@ -45,16 +45,16 @@ The architecture follows an **Explicit Module Boundary Pattern (EMBP)** througho
    │  - Addressing               │
    └───────────────▲─────────────┘
                    │
-   ┌───────────────┴────────────────┐
-   │     Concrete Transports        │
-   │                                │
-   │  -  memory (reference)         │
-   │  -  AMQP   (lapin    )         │
-   │  -  DDS    (dust_dds )         │
-   │  -  MQTT   (rumqttc  )         │
-   │  -  REDIS  (redis    )         │
-   │  -   ⋮                         │
-   └────────────────────────────────┘
+   ┌───────────────┴─────────────┐
+   │     Concrete Transports     │
+   │                             │
+   │  -  memory (reference)      │
+   │  -  AMQP   (lapin    )      │
+   │  -  DDS    (dust_dds )      │
+   │  -  MQTT   (rumqttc  )      │
+   │  -  Redis  (redis-rs )      │
+   │  -   ...                    │
+   └─────────────────────────────┘
 ```
 
 Note: Each transport, other than memory, is feature-gated. Applications compile only what they use.
@@ -112,16 +112,19 @@ transport/
 ├── dds/
 │    ├── mod.rs
 │    └── dust_dds.rs      # DDS via dust_dds
-└── mqtt/
+├── mqtt/
+│   ├── mod.rs
+│   └── rumqttc.rs        # MQTT via rumqttc
+└── redis/
     ├── mod.rs
-    └── rumqttc.rs        # MQTT via rumqttc
+    └── redis.rs          # Redis via redis-rs
 ```
 
 Future additions follow this same pattern. There may be multiple libraries used for a given transport.
 
 
 ```
-└── mqtt/
+├── mqtt/
 │   ├── mod.rs
 │   ├── rumqttc.rs
 │   └── new-library-crate
@@ -275,6 +278,43 @@ This preserves safety while keeping the public `Transport` trait `Send + Sync`.
 * **Reliability**: `Reliable`    - Ensures delivery with retries
 * **History**:     `KeepLast(1)` - Prevents correlation confusion
 * **Durability**:  `Volatile`    - No persistence, ephemeral messages
+
+</details>
+
+<details>
+<summary><strong>Redis Transport (Redis Pub/Sub)</strong></summary>
+
+The `redis` transport adapts Redis Pub/Sub semantics to the transport contract defined by this crate.
+
+### Concurrency model
+
+* A single background actor owns both Redis connections
+* All interaction with Redis is serialized through the actor
+* No other task touches the connections directly
+
+This preserves safety while keeping the public `Transport` trait `Send + Sync`.
+
+### Connection behavior
+
+* Two connections are required per transport instance: Redis prohibits issuing regular commands (e.g. `PUBLISH`) on a connection in Pub/Sub mode
+  * `publish_conn` — standard async connection, used exclusively for `PUBLISH`
+  * `subscribe_conn` — Pub/Sub connection, used only for `SUBSCRIBE` and inbound message delivery
+* Connections are established eagerly during transport creation
+* On connection error, the actor reconnects after a delay and re-subscribes to all active topics
+
+### Subscription semantics
+
+* Subscriptions are serialized one at a time via an `Ack::Retry` pattern
+* Redis sends a confirmation on `SUBSCRIBE` that contains no topic name, making concurrent subscribes ambiguous
+* If a subscribe is already in flight, the actor responds `Ack::Retry` and the caller sleeps briefly before retrying
+* This serializes subscribes without blocking the actor event loop
+
+### Message delivery
+
+* Incoming Pub/Sub messages are demultiplexed by topic
+* Messages are fanned out to all local subscribers for that topic
+* Delivery is best-effort and non-durable
+* No retained-message or replay behavior
 
 </details>
 
@@ -441,7 +481,7 @@ It provides a **clean RPC abstraction over imperfect transports**, not a perfect
 
 Potential future extensions include:
 
-* Additional transport implementations
+* Additional transport implementations such as `fred` as a second library for `Redis`
 * Optional response caching for idempotent requests
 * Pluggable retry / timeout policies
 

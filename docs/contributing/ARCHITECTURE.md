@@ -35,7 +35,7 @@ src
     ├── dds              # DDS protocol transports
     │   ├── mod.rs       # Protocol gateway (EMBP)
     │   ├── dust_dds.rs  # DDS via dust_dds library
-    │   └── README.md    # DDS design notes
+    │   └── README.md    # DDS detail design notes
     ├── memory.rs        # In-memory transport (always available)
     ├── mqtt             # MQTT protocol transports
     │   ├── mod.rs       # Protocol gateway (EMBP)
@@ -43,7 +43,7 @@ src
     └── redis            # Redis protocol transports
         ├── mod.rs       # Protocol gateway (EMBP)
         ├── redis.rs     # Redis Pub/Sub via redis library
-        └── README.md    # Redis transport design notes
+        └── README.md    # Redis transport detail design notes
 
 ```
 

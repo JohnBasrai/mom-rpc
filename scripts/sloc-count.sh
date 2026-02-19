@@ -40,7 +40,7 @@ total=$(tokei src/ --output json | jq '.Rust.code')
 core=$((total - amqp_sloc - mqtt_sloc - dds_sloc - redis_sloc))
 
 echo "**Notes:**"
-echo " - *Core library: $core lines, including In-memory."
+echo " - *Core library: $core lines, including In-memory.*"
 echo " - *Total: $total lines.*"
 echo " - *SLOC measured using \`tokei\` (crates.io methodology).*"
 echo
