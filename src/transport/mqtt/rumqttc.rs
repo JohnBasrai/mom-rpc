@@ -349,7 +349,7 @@ impl MqttActor {
         {
             let mut pending = self.pending_subscribe.write().await;
             if pending.is_some() {
-                log_info!("{transport_id}:ACTOR: found pending subscribe, returning retry...",);
+                log_debug!("{transport_id}: handle_subscribe: subscribe already pending, retry...",);
                 // Another subscribe is in flight; tell caller to retry after a short delay
                 let _ = resp.send(Ok(Ack::Retry));
                 return;
@@ -565,7 +565,7 @@ impl Transport for RumqttcTransport {
                 // broker confirms the current one via SUBACK
                 Ok(Ack::Retry) => {
                     let delay_ms = 200;
-                    log_info!(
+                    log_debug!(
                         "{}: subscribe: Got Ack::Retry, retrying in {delay_ms}ms...",
                         self.base.transport_id
                     );

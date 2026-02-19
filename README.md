@@ -172,7 +172,7 @@ For distributed deployments with an MQTT broker:
 **Cargo.toml:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.8", features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.9", features = ["transport_rumqttc"] }
 ```
 
 **Server:**
@@ -239,9 +239,10 @@ println!("Temperature: {} {}", resp.value, resp.unit);
 transport.close().await?;
 ```
 See complete working [examples](https://github.com/JohnBasrai/mom-rpc/tree/main/examples):
- - `examples/sensor_server.rs`
  - `examples/sensor_client.rs`
  - `examples/sensor_fullduplex.rs`
+ - `examples/sensor_memory.rs`
+ - `examples/sensor_server.rs`
 
 ---
 
@@ -297,7 +298,7 @@ Disable the `logging` feature:
 
 ```toml
 [dependencies]
-mom-rpc = { version = "0.8", default-features = false, features = ["transport_rumqttc"] }
+mom-rpc = { version = "0.9", default-features = false, features = ["transport_rumqttc"] }
 ```
 
 `mom-rpc` does not install a global subscriber. The application is responsible for configuring `tracing`.
@@ -331,7 +332,7 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
 **You can enable multiple transports and choose at runtime:**
 ```toml
 [dependencies]
-mom-rpc = { version = "0.8", features = ["transport_rumqttc", "transport_lapin"] }
+mom-rpc = { version = "0.9", features = ["transport_rumqttc", "transport_lapin"] }
 ```
 
 ```rust
@@ -349,22 +350,24 @@ The builder tries transports in this order: `dust_dds` → `rumqttc` → `lapin`
 
 Applications can also run multiple transports concurrently (e.g., MQTT for IoT devices and AMQP for backend services) by creating separate transport instances.
 
-**Transport implementation sizes (as of v0.8.2):**
+**Transport implementation sizes (as of v0.9.0):**
+
 
 | Transport | Feature Flag | SLOC | Use Case |
 |:----------|:-------------|-----:|:---------|
 | In-memory | *(always available)* | 107 | Testing, single-process |
 | AMQP      | `transport_lapin`    | 313 | RabbitMQ, enterprise messaging |
-| MQTT      | `transport_rumqttc`  | 404 | IoT, lightweight pub/sub |
+| MQTT      | `transport_rumqttc`  | 418 | IoT, lightweight pub/sub |
 | DDS       | `transport_dust_dds` | 703 | Real-time, mission-critical |
+| REDIS     | `transport_redis`    | 368 | REDIS In-memory pub/sub, low-latency messaging |
 
 **Notes:**
- - *Core library: 1,381 lines, including In-memory.
- - *Total: 2,801 lines.*
+ - *Core library: 1,402 lines, including In-memory.
+ - *Total: 3,204 lines.*
  - *SLOC measured using `tokei` (crates.io methodology).*
 
-Example: An application using only the MQTT transport compiles 1381 + 404 = 1785 lines of `mom-rpc` code.
-With both MQTT and AMQP enabled: 1381 + 404 + 313 = 2098 lines.
+Example: An application using only the MQTT transport compiles 1402 + 418 = 1820 lines of `mom-rpc` code.
+With both MQTT and AMQP enabled: 1402 + 418 + 313 = 2133 lines.
 
 ---
 
@@ -469,9 +472,9 @@ Applications requiring exactly-once effects must ensure idempotency or implement
 
 ## Transport-Specific Considerations
 
-**Broker-based transports (MQTT, AMQP):**
+**Broker-based transports (AMQP, MQTT, REDIS):**
 Due to the star topology, there's a potential race condition during startup where
-clients may publish before servers have subscribed. The unified broker API (0.8+) includes
+clients may publish before servers have subscribed. The unified broker API (0.9+) includes
 built-in retry with exponential backoff to handle these races gracefully. Configure via
 `RpcBrokerBuilder::retry_max_attempts()` and related methods.
 
@@ -514,7 +517,7 @@ This library does not handle authentication. Delegate to:
 - [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.8.2)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.9.0)
 
 ---
 

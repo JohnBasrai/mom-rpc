@@ -18,6 +18,7 @@ mod amqp;
 mod dds;
 mod memory;
 mod mqtt;
+mod redis;
 
 // Memory transport - process-global factory is internal; users use TransportBuilder
 pub(crate) use memory::create_memory_transport;
@@ -33,3 +34,4 @@ pub use memory::MemoryHub;
 pub use amqp::create_lapin_transport;
 pub use dds::create_dust_dds_transport;
 pub use mqtt::create_rumqttc_transport;
+pub use redis::create_redis_transport;

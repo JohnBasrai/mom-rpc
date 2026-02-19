@@ -37,9 +37,13 @@ src
     │   ├── dust_dds.rs  # DDS via dust_dds library
     │   └── README.md    # DDS design notes
     ├── memory.rs        # In-memory transport (always available)
-    └── mqtt             # MQTT protocol transports
+    ├── mqtt             # MQTT protocol transports
+    │   ├── mod.rs       # Protocol gateway (EMBP)
+    │   └── rumqttc.rs   # MQTT via rumqttc library
+    └── redis            # Redis protocol transports
         ├── mod.rs       # Protocol gateway (EMBP)
-        └── rumqttc.rs   # MQTT via rumqttc library
+        ├── redis.rs     # Redis Pub/Sub via redis library
+        └── README.md    # Redis transport design notes
 
 ```
 
@@ -102,14 +106,14 @@ Transports are organized by **protocol → library**. Use an existing transport 
 
 ### Adding First Implementation for a New Protocol
 
-The steps below assume you are adding a new kafka transport.  Substitute your actual name for kafka in these steps.
+The steps below assume you are adding a new redis transport.  Substitute your actual name for redis in these steps.
 
 **Example:** See issue #38 and commit `eb52cf9` for a complete working example of adding the DDS transport via dust_dds.
 
-1. Create protocol directory: `src/transport/kafka/`
-2. Create protocol gateway:   `src/transport/kafka/mod.rs`
-3. Create new transport implementation: `src/transport/kafka/rdkafka.rs`
-4. Update Cargo.toml / add feature flag: `transport_rdkafka = ["rdkafka"]`
+1. Create protocol directory: `src/transport/redis/`
+2. Create protocol gateway:   `src/transport/redis/mod.rs`
+3. Create new transport implementation: `src/transport/redis/redis.rs`
+4. Update Cargo.toml / add feature flag: `transport_redis = ["redis"]`
 5. Update transport-level gateway: `src/transport/mod.rs`
 6. Update lib.rs `src/lib.rs`
 7. Update tests `scripts/local-test.sh`
@@ -120,26 +124,26 @@ The steps below assume you are adding a new kafka transport.  Substitute your ac
 
 **Detailed instructions for each step:**
 
-1,2. Create protocol directory and gateway (`src/transport/kafka/mod.rs`):
+1,2. Create protocol directory and gateway (`src/transport/redis/mod.rs`):
 
 ```rust
-//! Kafka protocol transports.
+//! Redis protocol transports.
 //!
-//! This module contains transport implementations for Kafka brokers.
+//! This module contains transport implementations for Redis brokers.
 //! Currently supports:
-//! - rdkafka - Kafka via rdkafka library (rdkafka.rs)
+//! - redis - Redis Pub/Sub via redis library (redis.rs)
 
-#[cfg(feature = "transport_rdkafka")]
-mod rdkafka;
+#[cfg(feature = "transport_redis")]
+mod redis;
 
-#[cfg(feature = "transport_rdkafka")]
-pub use rdkafka::create_transport as create_rdkafka_transport; // rename to avoid collision
+#[cfg(feature = "transport_redis")]
+pub use redis::create_transport as create_redis_transport; // rename to avoid collision
 ```
 
-3. Create new transport implementation (`src/transport/kafka/rdkafka.rs`):
+3. Create new transport implementation (`src/transport/redis/redis.rs`):
 
 ```rust
-//! Kafka transport implementation using rdkafka.
+//! Redis Pub/Sub transport implementation using redis.
 
 use crate::{Result, RpcConfig, Transport, TransportPtr};
 
@@ -154,21 +158,20 @@ Leave this stub now, you will finish it in step 8.
 
 ```
 [dependencies]
-rdkafka = { version = "0.39", optional = true }
-libc    = { version = "0.2",  optional = true } # transitive dependency of rdkafka
+redis = { version = "0.25", features = ["tokio-comp", "aio"], optional = true }
 
 [features]
-transport_rdkafka = ["rdkafka", "libc"]
+transport_redis = ["dep:redis"]
 ```
 
 5. Update transport-level gateway (`src/transport/mod.rs`):
 
 ```rust
-#[cfg(feature = "transport_rdkafka")]
-mod kafka;
+#[cfg(feature = "transport_redis")]
+mod redis;
 
-#[cfg(feature = "transport_rdkafka")]
-pub use kafka::create_rdkafka_transport;
+#[cfg(feature = "transport_redis")]
+pub use redis::create_redis_transport;
 ```
 
 6. Update lib.rs `src/lib.rs`
@@ -179,8 +182,8 @@ pub use kafka::create_rdkafka_transport;
 The code below demonstrates the feature guard pattern for `create_transport()`:
 
 ```rust
-#[cfg(feature = "transport_rdkafka")]
-pub use transport::create_rdkafka_transport;
+#[cfg(feature = "transport_redis")]
+pub use transport::create_redis_transport;
 
 // Update feature guards in this method
 pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
@@ -191,14 +194,14 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
     #[cfg(all(feature = "transport_lapin", not(feature = "transport_rumqttc")))]
     { return create_lapin_transport(config).await; }
 
-    #[cfg(all(feature = "transport_rdkafka",           // <-- NEW
+    #[cfg(all(feature = "transport_redis",             // <-- NEW
               not(any(feature = "transport_rumqttc",   // <-- NEW
                       feature = "transport_lapin"))))] // <-- NEW
-    { return create_rdkafka_transport(config).await; } // <-- NEW
+    { return create_redis_transport(config).await; }   // <-- NEW
 
     #[cfg(not(any(feature = "transport_rumqttc",
                   feature = "transport_lapin",
-                  feature = "transport_rdkafka")))]    // <-- NEW
+                  feature = "transport_redis")))]      // <-- NEW
     { create_memory_transport(config).await }
 }
 ```
@@ -210,7 +213,7 @@ pub async fn create_transport(config: &RpcConfig) -> Result<TransportPtr> {
 echo "==> Feature Matrix"
 run_test "default features" "default"
 run_test "rumqttc" "transport_rumqttc"
-run_test "rdkafka" "transport_rdkafka"  # <-- Add rdkafka
+run_test "redis" "transport_redis"  # <-- Add redis
 run_test "no default features" "no-default-features"
 run_test "all features" "all-features"
 ```
@@ -218,7 +221,7 @@ run_test "all features" "all-features"
 8. Go back and finish the implementation begun in step 3.
 9. Edit `.github/workflows/ci.yml`
    In the `test` job, find the `matrix.feature` list.
-   Add `transport_kafka` to the list (in alphabetically order).
+   Add `transport_redis` to the list (in alphabetical order).
 
 Study the reference implementation (`lapin` or `rumqttc`) to understand:
 
@@ -251,6 +254,7 @@ Features are named after the **library**, not the protocol:
 | `transport_rumqttc`  | ✅ (library name) | rumqttc    |
 | `transport_dust_dds` | ✅ (library name) | dust_dds   |
 | `transport_lapin`    | ✅ (library name) | lapin      |
+| `transport_redis`    | ✅ (library name) | redis      |
 | `transport_paho`     | ✅ (library name) | paho       |
 | `transport_mqtt`     | ❌ (too generic)  | N/A        |
 | `transport_amqp`     | ❌ (too generic)  | N/A        |

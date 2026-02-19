@@ -60,16 +60,19 @@ pub enum RpcError {
     ///
     /// For example, calling `request_to()` in Server mode or
     /// `register_rpc_handler()` in Client mode.
+    /// See [`TransportBuilder`](crate::TransportBuilder)
     #[error("invalid mode: {0}")]
     InvalidMode(String),
 
     /// Required configuration parameter is missing.
+    /// See [`TransportBuilder`](crate::TransportBuilder)
     #[error("missing required config: {0}")]
     MissingConfig(String),
 
     /// Configuration conflict detected.
     ///
     /// For example, using both explicit queue names and mode sugar methods.
+    /// See [`TransportBuilder`](crate::TransportBuilder)
     #[error("configuration conflict: {0}")]
     ConfigConflict(String),
 }

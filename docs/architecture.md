@@ -25,18 +25,21 @@ The architecture follows an **Explicit Module Boundary Pattern (EMBP)** througho
 ```
    ┌─────────────────────────────┐
    │         User Code           │
-   │       (RpcBroker)           │
+   │        (RpcBroker)          │
    └───────────────▲─────────────┘
                    │
    ┌───────────────┴─────────────┐
    │         RPC Layer           │
+   │                             │
    │  - Correlation handling     │
    │  - Method dispatch          │
    │  - Pending request tracking │
+   │  - Retry / timeouts         │
    └───────────────▲─────────────┘
                    │
    ┌───────────────┴─────────────┐
    │      Transport Layer        │
+   │                             │
    │  - Publish / Subscribe      │
    │  - Delivery semantics       │
    │  - Addressing               │
@@ -44,11 +47,13 @@ The architecture follows an **Explicit Module Boundary Pattern (EMBP)** througho
                    │
    ┌───────────────┴────────────────┐
    │     Concrete Transports        │
+   │                                │
    │  -  memory (reference)         │
-   │  -  AMQP   (lapin)             │
-   │  -  DDS    (dust_dds)          │
-   │  -  MQTT   (rumqttc)           │
-   │  - (future: Kafka, NATS, etc.) │
+   │  -  AMQP   (lapin    )         │
+   │  -  DDS    (dust_dds )         │
+   │  -  MQTT   (rumqttc  )         │
+   │  -  REDIS  (redis    )         │
+   │  -   ⋮                         │
    └────────────────────────────────┘
 ```
 
@@ -436,7 +441,7 @@ It provides a **clean RPC abstraction over imperfect transports**, not a perfect
 
 Potential future extensions include:
 
-* Additional transport implementations (Kafka, NATS, etc.)
+* Additional transport implementations
 * Optional response caching for idempotent requests
 * Pluggable retry / timeout policies
 

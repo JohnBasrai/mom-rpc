@@ -29,11 +29,15 @@ printf "| MQTT      | \`transport_rumqttc\`  | %3d | IoT, lightweight pub/sub |\
 dds_sloc=$(tokei src/transport/dds/dust_dds.rs --output json | jq '.Rust.code')
 printf "| DDS       | \`transport_dust_dds\` | %3d | Real-time, mission-critical |\n" "$dds_sloc"
 
+# REDIS
+redis_sloc=$(tokei src/transport/redis/redis.rs --output json | jq '.Rust.code')
+printf "| REDIS     | \`transport_redis\`    | %3d | REDIS In-memory pub/sub, low-latency messaging |\n" "$redis_sloc"
+
 echo ""
 
 # Calculate totals
 total=$(tokei src/ --output json | jq '.Rust.code')
-core=$((total - amqp_sloc - mqtt_sloc - dds_sloc))
+core=$((total - amqp_sloc - mqtt_sloc - dds_sloc - redis_sloc))
 
 echo "**Notes:**"
 echo " - *Core library: $core lines, including In-memory."
