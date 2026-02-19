@@ -14,13 +14,14 @@
 //! | **AMQP via lapin**   | RabbitMQ and AMQP 0-9-1 brokers   | `transport_lapin`    |
 //! | **DDS via dust_dds** | Brokerless peer-to-peer transport | `transport_dust_dds` |
 //! | **MQTT via rumqttc** | MQTT broker-based transport       | `transport_rumqttc`  |
+//! | **Redis via redis**  | Redis Pub/Sub transport           | `transport_redis`    |
 //!
 //! **Note:** The `logging` feature (enabled by default) provides diagnostic output via `tracing`.
 //! To disable logging, use `default-features = false` in your `Cargo.toml`:
 //!
 //! ```toml
 //! [dependencies]
-//! mom-rpc = { version = "0.8", default-features = false, features = ["transport_rumqttc"] }
+//! mom-rpc = { version = "0.9", default-features = false, features = ["transport_rumqttc"] }
 //! ```
 //!
 //! # Quick Start
@@ -73,6 +74,10 @@
 //! # Examples
 //!
 //! See the [examples/](https://github.com/JohnBasrai/mom-rpc/blob/main/examples/)
+//!  - `examples/sensor_client.rs`
+//!  - `examples/sensor_fullduplex.rs`
+//!  - `examples/sensor_memory.rs`
+//!  - `examples/sensor_server.rs`
 
 #![cfg_attr(
     test,
@@ -140,6 +145,7 @@ pub use transport::MemoryHub;
 pub(crate) use transport::create_dust_dds_transport;
 pub(crate) use transport::create_lapin_transport;
 pub(crate) use transport::create_memory_transport;
+pub(crate) use transport::create_redis_transport;
 pub(crate) use transport::create_rumqttc_transport;
 
 ////////////////////////////////////////

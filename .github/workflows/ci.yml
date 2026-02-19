@@ -64,6 +64,7 @@ jobs:
           - no-default-features
           - transport_dust_dds
           - transport_lapin
+          - transport_redis
           - transport_rumqttc
           - all-features
 

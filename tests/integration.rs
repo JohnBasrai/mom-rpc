@@ -536,7 +536,8 @@ async fn test_run_blocks_until_shutdown() -> Result<()> {
 #[cfg(not(any(
     feature = "transport_rumqttc",
     feature = "transport_lapin",
-    feature = "transport_dust_dds"
+    feature = "transport_dust_dds",
+    feature = "transport_redis",  // <-- needed this line.
 )))]
 #[tokio::test]
 async fn test_transport_builder_fallback_to_memory() -> Result<()> {

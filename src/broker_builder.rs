@@ -13,7 +13,7 @@ use std::time::Duration;
 ///
 /// # Examples
 ///
-/// ## Client with retry
+/// ## Client
 /// ```no_run
 /// use mom_rpc::{TransportBuilder, RpcBrokerBuilder};
 /// use std::time::Duration;
@@ -27,17 +27,17 @@ use std::time::Duration;
 ///     .await?;
 ///
 /// let client = RpcBrokerBuilder::new(transport)
-///     .retry_max_attempts(20)
+///     .retry_max_attempts(6)
 ///     .retry_multiplier(2.0)
-///     .retry_initial_delay(Duration::from_millis(200))
-///     .retry_max_delay(Duration::from_secs(10))
-///     .request_total_timeout(Duration::from_millis(200))
+///     .retry_initial_delay(Duration::from_millis(250))
+///     .retry_max_delay(Duration::from_secs(5))
+///     .request_total_timeout(Duration::from_secs(25))
 ///     .build()?;
 /// # Ok(())
 /// # }
 /// ```
 ///
-/// ## Server without retry
+/// ## Server
 /// ```no_run
 /// use mom_rpc::{TransportBuilder, RpcBrokerBuilder};
 ///

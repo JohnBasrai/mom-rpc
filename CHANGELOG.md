@@ -7,6 +7,33 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.9.0] - 2026-02-19
+
+### Added
+
+- **Redis transport** via `redis` crate (#55)
+  - Redis Pub/Sub over dedicated publish and pubsub connections
+  - Actor-based concurrency model consistent with existing transports
+  - Eager connection at transport creation time (both connections)
+  - `split()` sink/stream pattern for concurrent subscribe and receive
+  - Enable via `features = ["transport_redis"]`
+- Manual integration test script: `scripts/manual-tests/redis.sh`
+
+### Changed
+
+- `scripts/manual-tests/mqtt.sh` simplified to use `sensor_fullduplex`
+  - Exercises concurrent subscribe serialization path directly
+  - Consistent with redis.sh and the transport validation approach
+- Updated `scripts/manual-tests/README.md` to document `sensor_fullduplex`
+  as the preferred example for transport-layer validation
+
+### Dependencies
+
+- Added `redis = "^1.0.3"` with `tokio-comp` and `aio` features (optional)
+- Added `futures-util = "0.3"` (optional, required by `transport_redis`)
+
+---
+
 ## [0.8.1] - 2026-02-18
 
 ### Fixed
@@ -369,7 +396,7 @@ let broker = RpcBrokerBuilder::new(transport).build()?;
 
 ---
 
-## [0.2.0] – 2026-02-03
+## [0.2.0] — 2026-02-03
 
 ### Fixed
 - Corrected in-process memory transport semantics to require shared state
@@ -390,7 +417,7 @@ let broker = RpcBrokerBuilder::new(transport).build()?;
 
 ---
 
-## [0.1.0] – 2026-02-03
+## [0.1.0] — 2026-02-03
 
 ### Added
 - Initial transport-agnostic asynchronous RPC architecture

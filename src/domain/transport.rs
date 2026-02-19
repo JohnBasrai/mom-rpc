@@ -103,7 +103,9 @@ impl From<&TransportConfig> for TransportBase {
 
 /// Configuration for creating a transport instance.
 ///
-/// Passed to transport factory functions (`create_*_transport()`).
+/// This type is constructed internally by
+/// [`TransportBuilder`](crate::TransportBuilder) and passed to transport factory
+/// functions. Use `TransportBuilder` to create transports
 #[derive(Clone, Debug)]
 pub struct TransportConfig {
     /// Broker URI (e.g. `"mqtt://localhost:1883"`, `"amqp://localhost:5672/%2f"`)
@@ -369,9 +371,19 @@ pub struct SubscriptionHandle {
 /// The in-memory transport serves as the reference implementation of these
 /// semantics.
 ///
-/// # Available Implementations
+/// ## Available Implementations
 ///
-/// - `create_memory_transport` - In-memory transport (always available)
+/// Transports are created via [`TransportBuilder`](crate::TransportBuilder), which
+/// selects the appropriate implementation based on the URI scheme and enabled
+/// features:
+///
+/// | Scheme      | Protocol | Library    | Feature Flag         |
+/// |:------------|:---------|:-----------|:---------------------|
+/// | `memory://` | _(none)_ | In-memory  | always available, testing only |
+/// | `mqtt://`   | MQTT     | rumqttc    | `transport_rumqttc`  |
+/// | `amqp://`   | AMQP     | lapin      | `transport_lapin`    |
+/// | `redis://`  | Redis Pub/Sub | redis | `transport_redis`    |
+/// | `dds://`    | DDS      | dust_dds   | `transport_dust_dds` |
 ///
 /// # Notes
 ///

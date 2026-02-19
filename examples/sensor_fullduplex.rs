@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
 
     let broker_uri = std::env::var("BROKER_URI").unwrap_or_else(|_| "memory://".to_string());
 
-    println!("🌡️  Full-Duplex Sensor Example");
+    println!("🌡️ Full-Duplex Sensor Example");
     println!("   Transport: {broker_uri}");
     println!("   Node ID:   {NODE_ID}\n");
 
@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
     println!("📡 Making RPC calls to self...\n");
 
     // Read temperature in Celsius
-    print!("  🌡️  Temperature (°C)... ");
+    print!("  🌡️ Temperature (°C)... ");
     let temp_c: SensorReading = broker
         .request_to(
             NODE_ID, // ← Calling ourselves
@@ -95,7 +95,7 @@ async fn main() -> Result<()> {
     println!("✓ {} {}", temp_c.value, temp_c.unit);
 
     // Read temperature in Fahrenheit
-    print!("  🌡️  Temperature (°F)... ");
+    print!("  🌡️ Temperature (°F)... ");
     let temp_f: SensorReading = broker
         .request_to(
             NODE_ID,

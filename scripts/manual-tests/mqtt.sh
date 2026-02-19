@@ -13,7 +13,6 @@ FEATURE="${1:-}"
 CONTAINER_NAME="mom-rpc-test-mosquitto"
 MQTT_PORT=1883
 BROKER_URI="mqtt://localhost:${MQTT_PORT}"
-: ${CLEAN_LOGS:=yes}
 : "${FEATURE:=transport_rumqttc}"
 # ---
 
@@ -25,9 +24,9 @@ usage() {
     echo ""
     echo "This script:"
     echo "  1. Starts a Mosquitto MQTT broker in Docker"
-    echo "  2. Builds and runs sensor_server example"
-    echo "  3. Runs sensor_client example and validates output"
-    echo "  4. Cleans up (kills server, stops container)"
+    echo "  2. Builds and runs sensor_fullduplex example"
+    echo "  3. Validates output contains Temperature, Humidity, Pressure"
+    echo "  4. Cleans up (stops container)"
     exit 1
 }
 
@@ -53,29 +52,15 @@ fi
 
 # ---
 
-# shell-check does not model traps well
 # shellcheck disable=SC2317
 cleanup() {
     echo ""
     echo "==> Cleaning up..."
-    
-    # Kill server process
-    if [ -n "${SERVER_PID:-}" ]; then
-        echo "Killing server (PID: $SERVER_PID)..."
-        kill "$SERVER_PID" 2>/dev/null || true
-        wait "$SERVER_PID" 2>/dev/null || true
-    fi
-    
-    # Stop and remove container
+
     if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
         echo "Stopping Mosquitto container..."
         docker stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
-        docker rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
-    fi
-    
-    # Remove temp files
-    if [ "${CLEAN_LOGS}" == 'yes' ] ; then
-        rm -f server.log client.log ./*.build.log
+        docker rm   "$CONTAINER_NAME" >/dev/null 2>&1 || true
     fi
 }
 
@@ -87,10 +72,8 @@ echo "==> Starting Mosquitto MQTT broker..."
 echo "    Container: $CONTAINER_NAME"
 echo "    MQTT port: $MQTT_PORT"
 
-# Remove existing container if present
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
-# Start Mosquitto with anonymous access enabled for testing
 docker run -d \
     --name "$CONTAINER_NAME" \
     -p "${MQTT_PORT}:1883" \
@@ -98,9 +81,8 @@ docker run -d \
     mosquitto -c /mosquitto-no-auth.conf \
     >/dev/null
 
-# Verify broker is accessible by checking if container is running
 if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    echo "Error: Mosquitto broker failed to start properly"
+    echo "Error: Mosquitto broker failed to start"
     docker logs "$CONTAINER_NAME"
     exit 1
 fi
@@ -110,78 +92,38 @@ echo "    ✓ Mosquitto broker ready"
 # ---
 
 echo ""
-echo "==> Building examples with feature: $FEATURE"
+echo "==> Building sensor_fullduplex with feature: $FEATURE"
 
-if ! cargo build --example sensor_server --features "$FEATURE" >& sensor_server.build.log; then
-    echo "Error: Failed to build sensor_server"
-    cat sensor_server.build.log
+if ! cargo build --example sensor_fullduplex --features "$FEATURE" 2>&1; then
+    echo "Error: Failed to build sensor_fullduplex"
     exit 1
 fi
 
-if ! cargo build --example sensor_client --features "$FEATURE" >& sensor_client.build.log; then
-    echo "Error: Failed to build sensor_client"
-    cat sensor_client.build.log
-    exit 1
-fi
+echo "    ✓ Example built successfully"
 
-echo "    ✓ Examples built successfully"
+# ---
 
+echo ""
 echo "==> Running sensor_fullduplex test..."
-env BROKER_URI="${BROKER_URI}" RUST_LOG=info \
-    cargo run --example sensor_fullduplex --features transport_rumqttc
 
-# ---
+OUTPUT=$(env BROKER_URI="${BROKER_URI}" RUST_LOG=info \
+    cargo run --example sensor_fullduplex --features "$FEATURE" 2>&1)
 
-echo ""
-echo "==> Starting sensor_server..."
+echo "$OUTPUT"
 
-# Set broker URI via environment variable (examples should read this)
-export BROKER_URI="$BROKER_URI"
-
-cargo run --quiet --example sensor_server --features "$FEATURE" > server.log 2>&1 &
-SERVER_PID=$!
-
-echo "    Server PID: $SERVER_PID"
-
-# Check if server is still running
-if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-    echo "Error: Server process died"
-    echo "Server logs:"
-    cat server.log
-    exit 1
-fi
-
-echo "    ✓ Server running"
-
-# ---
-
-echo ""
-echo "==> Running sensor_client..."
-
-env BROKER_URI="${BROKER_URI}" RUST_LOG=info \
-    cargo --quiet run --example sensor_client --features "$FEATURE" >& client.log
-
-if grep -q  "Temperature" client.log && \
-   grep -q  "Humidity"    client.log && \
-   grep -q  "Pressure"    client.log ; then
+if echo "$OUTPUT" | grep -q "Temperature" && \
+   echo "$OUTPUT" | grep -q "Humidity"    && \
+   echo "$OUTPUT" | grep -q "Pressure"    ; then
     echo ""
     echo "✅ MQTT integration test PASSED"
     echo ""
     echo "Feature tested: $FEATURE"
     echo "Broker URI: $BROKER_URI"
-    echo "Output:"
-    cat  client.log
     exit 0
 else
     echo ""
     echo "❌ MQTT integration test FAILED"
     echo ""
-    echo "Expected output containing \"${PATTERN}\" but didn't find it"
-    echo ""
-    echo "Client output:"
-    cat client.log
-    echo ""
-    echo "Server logs:"
-    cat server.log
+    echo "Expected output containing Temperature, Humidity, and Pressure"
     exit 1
 fi

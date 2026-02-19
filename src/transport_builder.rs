@@ -261,9 +261,10 @@ impl TransportBuilder {
             Some("rumqttc") => crate::create_rumqttc_transport(config).await,
             Some("lapin") => crate::create_lapin_transport(config).await,
             Some("dust-dds") => crate::create_dust_dds_transport(config).await,
+            Some("redis") => crate::create_redis_transport(config).await,
             Some("memory") => crate::create_memory_transport(config).await,
             Some(other) => Err(RpcError::Transport(format!(
-                "unrecognized transport_type: {other}, valid values: memory, rumqttc, lapin, dust-dds"
+                "unrecognized transport_type: {other}, valid values: memory, rumqttc, lapin, dust-dds, redis"
             ))),
             None => {
                 if let Ok(t) = crate::create_dust_dds_transport(config.clone()).await {
@@ -273,6 +274,9 @@ impl TransportBuilder {
                     return Ok(t);
                 }
                 if let Ok(t) = crate::create_lapin_transport(config.clone()).await {
+                    return Ok(t);
+                }
+                if let Ok(t) = crate::create_redis_transport(config.clone()).await {
                     return Ok(t);
                 }
                 crate::create_memory_transport(config).await
