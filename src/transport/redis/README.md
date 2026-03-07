@@ -106,8 +106,8 @@ Redis **requires a dedicated connection** for Pub/Sub — a connection in
 Pub/Sub mode cannot issue regular commands like `PUBLISH`. Two async
 connections are required:
 
-- `publish_conn` — regular `redis::aio::Connection`, used only for `PUBLISH`
-- `pubsub_conn` — `redis::aio::PubSub` connection, used for `SUBSCRIBE`
+- `publish_conn`   — `redis::aio::Connection`, used only for `PUBLISH`
+- `subscribe_conn` — `redis::aio::PubSub` connection, used for `SUBSCRIBE`
   and receiving incoming messages
 
 `publish_conn` is used imperatively inside the `Cmd::Publish` arm — awaited
@@ -138,7 +138,7 @@ loop {
             }
         }
 
-        msg = self.pubsub_conn.on_message() => {
+        msg = self.subscribe_conn.on_message() => {
             // Deserialize envelope, fan out to local subscribers
             Self::handle_incoming(
                 self.transport_id.clone(),
@@ -154,11 +154,11 @@ loop {
 }
 ```
 
-| select! arm | Connection used | Purpose |
-|-------------|----------------|---------|
-| `cmd_rx.recv()` | `publish_conn` (inline) | Application commands |
-| `pubsub_conn.on_message()` | `pubsub_conn` | Incoming broker messages → fanout |
-| `shutdown.notified()` | — | Clean teardown |
+| select! arm                   | Connection used  | Purpose                           |
+|-------------------------------|------------------|-----------------------------------|
+| `cmd_rx.recv()`               | `publish_conn`   | Application commands              |
+| `subscribe_conn.on_message()` | `subscribe_conn` | Incoming broker messages → fanout |
+| `shutdown.notified()`         | —                | Clean teardown                    |
 
 ---
 
@@ -217,7 +217,7 @@ pub struct RedisTransport {
 struct RedisActor {
     transport_id: String,
     publish_conn: redis::aio::Connection,
-    pubsub_conn: redis::aio::PubSub,
+    subscribe_conn: redis::aio::PubSub,
     cmd_rx: mpsc::Receiver<Cmd>,
     subscribers: SubscriberMap,
     pending_subscribe: PendingSubscribe,

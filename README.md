@@ -8,19 +8,19 @@
 
 This crate provides a clean, strongly-typed RPC abstraction on top of pub/sub systems (such as MQTT or AMQP), without baking transport details into your application code.
 
-It is designed to *tame* message brokers, not expose them to application level code.
+It is designed to avoid exposing message broker details from application level code.
 
 ---
 
-## Lean by Design
+## Binary Footprint
 
 While this crate supports multiple transport implementations, **applications only compile the transports they enable**. The crate size shown on crates.io is the total of all transport implementations combined, but thanks to Cargo features, your application will only include the code for the transports you actually use. A typical application using a single transport will compile to approximately 45-55 KiB of mom-rpc code regardless of how many total transports the library supports.
 
 ---
 
-## Why this exists
+## Motivation
 
-Message-oriented middleware (pub/sub systems, etc.) is great for decoupling — but painful for request/response workflows:
+Message-oriented middleware (pub/sub systems, etc.) is great for decoupling — but insufficent for request/response workflows:
 
 * no native RPC semantics
 * no correlation handling
@@ -37,9 +37,9 @@ This crate solves that by providing:
 
 ---
 
-## How is this different?
+## Design Rationale
 
-Unlike RPC libraries that target a single broker, `mom-rpc` provides transport abstraction—write your RPC code once, run it on MQTT, AMQP, DDS, or in-memory. The same application works across different brokers by changing feature flags, not code. This matters when you need to deploy the same edge application across different infrastructure, or when your broker choice changes between development and production.
+Unlike RPC libraries that target a single broker, mom-rpc provides transport abstraction — write your RPC code once, run it on AMQP, DDS, MQTT, Redis, or in-memory by changing feature flags, not code. The same application works unchanged across development, staging, and production regardless of broker choice.
 
 ---
 
@@ -66,11 +66,11 @@ Unlike RPC libraries that target a single broker, `mom-rpc` provides transport a
 
 ---
 
-## Quick Start
+## Usage
 
 ### In-Memory Transport (Testing)
 
-Perfect for testing and single-process applications - no broker required:
+Suitable for testing and single-process applications - no broker required:
 
 ```rust
  use mom_rpc::{TransportBuilder, RpcBrokerBuilder, Result};
@@ -327,7 +327,7 @@ Broker-backed transports (e.g. MQTT) are implemented behind feature flags and ru
 
 `mom-rpc` provides multiple transport backends. Each is feature-gated so you only compile what you use:
 
-👉 The **memory transport is always available** - no feature flag required.
+The **memory transport is always available** - no feature flag required.
 
 **You can enable multiple transports and choose at runtime:**
 ```toml
@@ -350,19 +350,19 @@ The builder tries transports in this order: `dust_dds` → `rumqttc` → `lapin`
 
 Applications can also run multiple transports concurrently (e.g., MQTT for IoT devices and AMQP for backend services) by creating separate transport instances.
 
-**Transport implementation sizes (as of v0.9.0):**
+**Transport implementation sizes (as of v0.9.1):**
 
 
-| Transport | Feature Flag | SLOC | Use Case |
-|:----------|:-------------|-----:|:---------|
-| In-memory | *(always available)* | 107 | Testing, single-process |
-| AMQP      | `transport_lapin`    | 313 | RabbitMQ, enterprise messaging |
-| MQTT      | `transport_rumqttc`  | 418 | IoT, lightweight pub/sub |
-| DDS       | `transport_dust_dds` | 703 | Real-time, mission-critical |
-| Redis     | `transport_redis`    | 368 | In-memory pub/sub, low-latency messaging |
+| Transport | Feature Flag         | SLOC | Use Case                                 |
+|:----------|:---------------------|-----:|:-----------------------------------------|
+| In-memory | *(always available)* |  107 | Testing, single-process                  |
+| AMQP      | `transport_lapin`    |  313 | RabbitMQ, enterprise messaging           |
+| MQTT      | `transport_rumqttc`  |  418 | IoT, lightweight pub/sub                 |
+| DDS       | `transport_dust_dds` |  703 | Real-time, mission-critical              |
+| Redis     | `transport_redis`    |  368 | In-memory pub/sub, low-latency messaging |
 
 **Notes:**
- - *Core library: 1,402 lines, including In-memory.
+ - *Core library: 1,402 lines, including In-memory.*
  - *Total: 3,204 lines.*
  - *SLOC measured using `tokei` (crates.io methodology).*
 
@@ -375,7 +375,8 @@ With both MQTT and AMQP enabled: 1402 + 418 + 313 = 2133 lines.
 
 `request_total_timeout` is a **total wall-clock budget** for the entire request, including all retry attempts. It is distinct from `retry_max_delay`, which caps the interval between individual retries.
 
-The actual elapsed time may be less than the total timeout if the retry sequence exhausts its attempts first — whichever limit is reached first wins.
+The actual elapsed time may be less than the total timeout if the retry sequence exhausts its attempts first — the first limit reached takes precedence.
+
 
 Configure timeouts per-request or at the broker level:
 
@@ -434,7 +435,7 @@ See `examples/sensor_fullduplex.rs` for a complete full-duplex example.
 
 ---
 
-## What this crate is **not**
+## None-Goals
 
 This crate intentionally does **not** provide:
 
@@ -444,7 +445,7 @@ This crate intentionally does **not** provide:
 * broker configuration
 * distributed consensus
 
-This crate focuses narrowly on RPC semantics. It intentionally avoids higher-level distributed-systems concerns such as discovery, consensus, retries, or topology management. The underlying transport is expected to provide any required distributed-systems features.
+This crate focuses narrowly on RPC semantics. The underlying transport is expected to provide any required distributed-systems features.
 
 ---
 
@@ -517,14 +518,14 @@ This library does not handle authentication. Delegate to:
 - [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.9.0)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.9.1)
 
 ---
 
 ## Status
 
 * Early development / API unstable
-* Feedback welcome via [GitHub issues](https://github.com/JohnBasrai/mom-rpc/issues)
+* Issues and contributions are tracked via [GitHub](https://github.com/JohnBasrai/mom-rpc/issues)
 
 ---
 

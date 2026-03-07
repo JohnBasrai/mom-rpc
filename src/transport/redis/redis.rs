@@ -9,8 +9,8 @@
 //! - A single background **actor task** owns both Redis connections.
 //! - The actor is responsible for:
 //!   - publishing outbound messages via `publish_conn`,
-//!   - registering broker subscriptions via `pubsub_sink`,
-//!   - polling `pubsub_stream` for incoming data messages,
+//!   - registering broker subscriptions via `subscribe_sink`,
+//!   - polling `subscribe_stream` for incoming data messages,
 //!   - clean shutdown of both connections.
 //! - All interaction with the Redis client is serialized through this actor;
 //!   no other task ever touches the connections directly.
@@ -22,11 +22,11 @@
 //! connections are therefore maintained:
 //!
 //! - `publish_conn` — `MultiplexedConnection`, used only for `PUBLISH`
-//! - `pubsub_sink` / `pubsub_stream` — split from `aio::PubSub`, used for
+//! - `subscribe_sink` / `subscribe_stream` — split from `aio::PubSub`, used for
 //!   `SUBSCRIBE` and receiving incoming messages respectively
 //!
-//! `split()` is used so that `pubsub_sink` can call `subscribe()` concurrently
-//! with `pubsub_stream` being polled in `select!`.
+//! `split()` is used so that `subscribe_sink` can call `subscribe()` concurrently
+//! with `subscribe_stream` being polled in `select!`.
 //!
 //! ## Subscription confirmation
 //!
@@ -173,8 +173,8 @@ impl RedisTransport {
     pub fn create(
         base: TransportBase,
         publish_conn: MultiplexedConnection,
-        pubsub_sink: PubSubSink,
-        pubsub_stream: PubSubStream,
+        subscribe_sink: PubSubSink,
+        subscribe_stream: PubSubStream,
         shutdown: Arc<Notify>,
     ) -> TransportPtr {
         // ---
@@ -187,8 +187,8 @@ impl RedisTransport {
         let actor = RedisActor {
             transport_id: base.transport_id.clone(),
             publish_conn,
-            pubsub_sink,
-            pubsub_stream,
+            subscribe_sink,
+            subscribe_stream,
             cmd_rx,
             subscribers: Arc::clone(&subscribers),
             subscribe_pending,
@@ -216,8 +216,8 @@ struct RedisActor {
     // ---
     transport_id: String, // for logging only
     publish_conn: MultiplexedConnection,
-    pubsub_sink: PubSubSink,
-    pubsub_stream: PubSubStream,
+    subscribe_sink: PubSubSink,
+    subscribe_stream: PubSubStream,
     cmd_rx: mpsc::Receiver<Cmd>,
     subscribers: SubscriberMap,
     subscribe_pending: PendingSubscribe,
@@ -244,7 +244,7 @@ impl RedisActor {
                     }
                 }
 
-                maybe_msg = self.pubsub_stream.next() => {
+                maybe_msg = self.subscribe_stream.next() => {
                     match maybe_msg {
                         Some(msg) => {
                             let transport_id = self.transport_id.clone();
@@ -252,8 +252,8 @@ impl RedisActor {
                             Self::handle_incoming(transport_id, subscribers, msg).await;
                         }
                         None => {
-                            // pubsub_stream terminated (connection lost)
-                            log_error!("{}: pubsub stream ended", self.transport_id);
+                            // subscribe_stream terminated (connection lost)
+                            log_error!("{}: subscribe stream ended", self.transport_id);
                             self.reconnect = true;
                             tokio::time::sleep(RECONNECT_DELAY).await;
                         }
@@ -328,7 +328,7 @@ impl RedisActor {
             *pending = true;
         }
 
-        let result = self.pubsub_sink.subscribe(&topic).await;
+        let result = self.subscribe_sink.subscribe(&topic).await;
 
         {
             let mut pending = self.subscribe_pending.write().await;
@@ -541,7 +541,7 @@ pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
             RpcError::Transport(msg)
         })?;
 
-    let (pubsub_sink, pubsub_stream) = client
+    let (subscribe_sink, subscribe_stream) = client
         .get_async_pubsub()
         .await
         .map_err(|err| {
@@ -558,8 +558,8 @@ pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
     Ok(RedisTransport::create(
         TransportBase::from(&config),
         publish_conn,
-        pubsub_sink,
-        pubsub_stream,
+        subscribe_sink,
+        subscribe_stream,
         shutdown,
     ))
 }
