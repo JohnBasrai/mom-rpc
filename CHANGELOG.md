@@ -7,6 +7,18 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.9.2] - 2026-03-07
+
+### Dependencies
+
+- `redis`  1.0.3 → 1.0.4
+- `anyhow` 1.0.101 → 1.0.102
+- `lapin`  4.0.0 → 4.2.0 (adds tokio integration; transitive: `amq-protocol` 10.0.0 → 10.0.1, `tokio` 1.49 → 1.50)
+
+All transports tested against live brokers.
+
+---
+
 ## [0.9.1] - 2026-03-07
 
 ### Changed
