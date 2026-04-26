@@ -271,11 +271,11 @@ impl MqttActor {
                                 };
 
                                 for topic in topics {
-                                    if let Err(err) = self.client.subscribe(&topic, QoS::AtMostOnce).await {
+                                    match self.client.subscribe(&topic, QoS::AtMostOnce).await { Err(err) => {
                                         log_error!("{}: resubscribe failed for {topic}: {err}", self.transport_id);
-                                    } else {
+                                    } _ => {
                                         log_info!("{}: resubscribed to {topic}", self.transport_id);
-                                    }
+                                    }}
                                 }
                             }
                         }
