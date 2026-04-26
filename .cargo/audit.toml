@@ -24,7 +24,15 @@ ignore = [
 # The affected transport remains feature-gated and is not
 # enabled by default.
 
-  "RUSTSEC-2025-0009", # ring: unmaintained + panic risk
-  "RUSTSEC-2024-0336", # rustls: potential infinite loop / DoS
-  "RUSTSEC-2023-0052", # webpki: CPU denial of service
+# The following advisories are triggered by rumqttc 0.25.1 (current latest)
+# via its pinned TLS stack: rumqttc → rustls-webpki 0.102.x / rustls-pemfile 2.x
+#
+# No fix is available until rumqttc releases a version that upgrades to
+# rustls-webpki >=0.103.13. Remove these entries once that lands.
+
+  "RUSTSEC-2025-0134", # rustls-pemfile: unmaintained
+  "RUSTSEC-2026-0049", # rustls-webpki: CRL matching logic
+  "RUSTSEC-2026-0098", # rustls-webpki: URI name constraints
+  "RUSTSEC-2026-0099", # rustls-webpki: wildcard name constraints
+  "RUSTSEC-2026-0104", # rustls-webpki: CRL reachable panic
 ]
