@@ -7,6 +7,26 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.9.3] - 2026-04-26
+
+### Changed
+
+- Toolchain bumped `1.93.1` → `1.94.1`; expanded components (`rust-analyzer`, `rust-src`, `llvm-tools`)
+
+### Dependencies
+
+- Removed unused `futures = "0.3"` dependency (was gated on `transport_dust_dds`; DDS transport never imported it)
+- Removed unused `tokio-util = "0.7"` dependency
+- `lapin` transitive: `amq-protocol` 10.0.1 → 10.2.0, `async-rs` 0.8.0 → 0.8.4
+- `aws-lc-rs` 1.15.4 → 1.16.3, `aws-lc-sys` 0.37.1 → 0.40.0
+- `bitflags` 2.11.0 → 2.11.1, `bumpalo` 3.19.1 → 3.20.2, `cc` 1.2.56 → 1.2.61, `cmake` 0.1.57 → 0.1.58
+
+### Docs
+
+- `scripts/manual-tests/README.md`: added RabbitMQ `.erlang.cookie` troubleshooting section
+
+---
+
 ## [0.9.2] - 2026-03-07
 
 ### Dependencies

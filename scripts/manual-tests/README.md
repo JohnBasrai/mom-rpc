@@ -12,6 +12,8 @@ These scripts are **not part of CI**. They are for:
 
 CI continues to use the fast, reliable memory transport for automated testing.
 
+---
+
 ## Example Used: `sensor_fullduplex`
 
 All broker-based scripts use the `sensor_fullduplex` example rather than the
@@ -31,6 +33,8 @@ All broker-based scripts use the `sensor_fullduplex` example rather than the
 The AMQP and MQTT scripts still use the `sensor_server` / `sensor_client`
 pair because those transports predate this approach and validate the same
 transport surface area. New transport scripts should use `sensor_fullduplex`.
+
+---
 
 ## Available Tests
 
@@ -135,6 +139,7 @@ DDS uses RTPS multicast for automatic peer discovery. No broker configuration ne
 - Firewall rules may block multicast packets
 - Use `NO_CLEAN` parameter to preserve server.log and client.log for debugging
 
+---
 
 ## Design Principles
 
@@ -160,13 +165,43 @@ multiple library implementations without duplicating test logic:
 ./mqtt.sh transport_paho           # Future: test paho
 ```
 
+<details>
+<summary><b>Occasional amqp.sh permission errors at startup</b></summary>
+The root cause is a file permission issue with RabbitMQ's Erlang cookie file:
+
+```
+Error when reading /var/lib/rabbitmq/.erlang.cookie: eacces
+```
+
+The `.erlang.cookie` file inside the container has wrong ownership or permissions — RabbitMQ's process can't read it. This typically happens when:
+
+1. **A previous container run left a volume** with the cookie file owned by a different UID, and the new container can't read it.
+2. **A host-mounted volume** has the file owned by your host user rather than the `rabbitmq` user inside the container.
+
+**Quick fix:** Remove any lingering named volume or mounted directory for that container:
+
+```bash
+docker rm -f mom-rpc-test-rabbitmq
+docker volume ls  # look for anything related to mom-rpc or rabbitmq
+docker volume rm <volume-name>
+```
+
+Then re-run your script. If you're explicitly mounting `/var/lib/rabbitmq` as a volume in `amqp.sh`, either remove that mount (let Docker manage it ephemerally) or fix the permissions with `chown 999:999` (RabbitMQ's default UID in the official image) on the host directory before starting.
+</details>
+
+---
+
 Redis has a single implementation (`transport_redis`) so its script takes no
 parameter.
+
+---
 
 ## Exit Codes
 
 - `0` - Test passed
 - `1` - Test failed or error occurred
+
+---
 
 ## Cleanup
 
@@ -185,6 +220,7 @@ docker rm -f mom-rpc-test-rabbitmq
 docker rm -f mom-rpc-test-mosquitto
 docker rm -f mom-rpc-test-redis
 ```
+---
 
 ## Adding New Tests
 
@@ -201,6 +237,8 @@ To add a test for a new transport:
    - Clean up via `trap`
 4. Make executable: `chmod +x <protocol-name>.sh`
 5. Update this README
+
+---
 
 ## Notes
 
