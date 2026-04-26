@@ -23,7 +23,26 @@ run_test() {
     echo ""
 }
 
-# 1. Linting
+# 1. Security
+echo "==> Security"
+if cargo audit; then
+    echo "✅ Audit PASS"
+else
+    echo "❌ Audit FAIL"
+    FAILED_TESTS+=("audit")
+fi
+echo ""
+
+echo "==> Unused dependencies"
+if cargo machete; then
+    echo "✅ Machete PASS"
+else
+    echo "❌ Machete FAIL"
+    FAILED_TESTS+=("machete")
+fi
+echo ""
+
+# 2. Linting
 echo "==> Linting"
 if ./scripts/ci-lint.sh; then
     echo "✅ Lint PASS"
@@ -33,7 +52,7 @@ else
 fi
 echo ""
 
-# 2. Feature matrix testing
+# 3. Feature matrix testing
 echo "==> Feature Matrix"
 run_test "default features"    "default"
 run_test "rumqttc"             "transport_rumqttc"
@@ -43,7 +62,7 @@ run_test "dust_dds"            "transport_dust_dds"
 run_test "no default features" "no-default-features"
 run_test "all features"        "all-features"
 
-# 3. Documentation
+# 4. Documentation
 echo "==> Documentation"
 if ./scripts/ci-docs.sh; then
     echo "✅ Docs PASS"

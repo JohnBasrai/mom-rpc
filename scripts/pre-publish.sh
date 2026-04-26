@@ -48,6 +48,14 @@ echo "✓ main is in sync with origin/main"
 echo "✓ Git state OK"
 echo ""
 
+echo "==> Security audit..."
+cargo audit
+
+echo ""
+echo "==> Unused dependencies..."
+cargo machete
+
+echo ""
 echo "==> Packaging check..."
 cargo package
 
