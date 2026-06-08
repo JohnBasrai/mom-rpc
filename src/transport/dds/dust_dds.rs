@@ -78,7 +78,6 @@ use dust_dds::{
         time::{Duration as DdsDuration, DurationKind},
         type_support::DdsType,
     },
-    std_runtime::StdRuntime,
 };
 
 use std::collections::HashMap;
@@ -256,10 +255,7 @@ impl DustddsTransport {
     // ---
 
     /// Creates a new dust_dds transport with the given `DomainParticipant`.
-    pub fn create(
-        base: TransportBase,
-        participant: DomainParticipantAsync<StdRuntime>,
-    ) -> TransportPtr {
+    pub fn create(base: TransportBase, participant: DomainParticipantAsync) -> TransportPtr {
         // ---
 
         let transport_id = base.transport_id.clone();
@@ -299,11 +295,11 @@ impl DustddsTransport {
 struct DdsActor {
     // ---
     transport_id: String, // for logging only
-    participant: DomainParticipantAsync<StdRuntime>,
+    participant: DomainParticipantAsync,
     cmd_rx: mpsc::Receiver<Cmd>,
     subscribers: SubscriberMap,
     shutdown_tx: watch::Sender<bool>,
-    writers: HashMap<String, DataWriterAsync<StdRuntime, DdsEnvelope>>,
+    writers: HashMap<String, DataWriterAsync<DdsEnvelope>>,
     reader_tasks: Vec<JoinHandle<()>>,
 }
 
@@ -506,7 +502,7 @@ impl DdsActor {
 async fn run_topic_reader(
     transport_id: String,
     topic: String,
-    reader: DataReaderAsync<StdRuntime, DdsEnvelope>,
+    reader: DataReaderAsync<DdsEnvelope>,
     subscribers: SubscriberMap,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
@@ -532,9 +528,6 @@ async fn run_topic_reader(
         return;
     }
 
-    // NOTE: This is DDS timeout/duration. It is not not std or tokio versions.
-    let one_day = DdsDuration::new(86400, 0);
-
     loop {
         tokio::select! {
             _ = shutdown_rx.changed() => {
@@ -542,7 +535,7 @@ async fn run_topic_reader(
                 break;
             }
 
-            res = waitset.wait(one_day) => {
+            res = waitset.wait() => {
                 let triggered = match res {
                     Ok(v) => v,
                     Err(e) => {
@@ -575,7 +568,7 @@ async fn run_topic_reader(
 async fn drain_reader(
     transport_id: &str,
     topic: &str,
-    reader: &DataReaderAsync<StdRuntime, DdsEnvelope>,
+    reader: &DataReaderAsync<DdsEnvelope>,
     subscribers: &SubscriberMap,
 ) -> Result<()> {
     // ---
@@ -917,7 +910,7 @@ fn parse_domain_id(uri: Option<&str>) -> Result<u16> {
 async fn wait_for_matched_reader(
     tid: &str,
     topic: &str,
-    writer: &DataWriterAsync<StdRuntime, DdsEnvelope>,
+    writer: &DataWriterAsync<DdsEnvelope>,
     timeout_secs: u64,
 ) -> Result<()> {
     // ---
@@ -948,14 +941,15 @@ async fn wait_for_matched_reader(
         .await
         .map_err(|e| RpcError::Transport(format!("attach_condition failed: {e:?}")))?;
 
-    let timeout = DdsDuration::new(timeout_secs as i32, 0);
-
     // Wait for publication match
-    waitset.wait(timeout).await.map_err(|e| {
-        RpcError::Transport(format!(
-            "{tid}: no matched readers for topic {topic} within {timeout_secs}s: {e:?}"
-        ))
-    })?;
+    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), waitset.wait())
+        .await
+        .map_err(|_| {
+            RpcError::Transport(format!(
+                "{tid}: no matched readers for topic {topic} within {timeout_secs}s"
+            ))
+        })?
+        .map_err(|e| RpcError::Transport(format!("{tid}: waitset.wait failed: {e:?}")))?;
 
     // Verify we actually have a match
     let status = writer.get_publication_matched_status().await.map_err(|e| {
