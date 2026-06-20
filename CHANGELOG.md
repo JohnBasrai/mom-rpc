@@ -7,6 +7,19 @@ Early versions may include intentional refactors as semantics are clarified.
 
 ---
 
+## [0.9.4] - 2026-06-20
+
+### Dependencies
+
+- `dust_dds` 0.14 -> 0.15
+
+### Changed
+
+- Updated DDS transport internals for `dust_dds` 0.15 API changes
+- DDS publication-match waits now use Tokio timeout wrapping around `waitset.wait()`
+
+---
+
 ## [0.9.3] - 2026-04-26
 
 ### Changed

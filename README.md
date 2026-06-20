@@ -350,7 +350,7 @@ The builder tries transports in this order: `dust_dds` → `rumqttc` → `lapin`
 
 Applications can also run multiple transports concurrently (e.g., MQTT for IoT devices and AMQP for backend services) by creating separate transport instances.
 
-**Transport implementation sizes (as of v0.9.3):**
+**Transport implementation sizes (as of v0.9.4):**
 
 
 | Transport | Feature Flag         | SLOC | Use Case                                 |
@@ -358,12 +358,12 @@ Applications can also run multiple transports concurrently (e.g., MQTT for IoT d
 | In-memory | *(always available)* |  107 | Testing, single-process                  |
 | AMQP      | `transport_lapin`    |  313 | RabbitMQ, enterprise messaging           |
 | MQTT      | `transport_rumqttc`  |  418 | IoT, lightweight pub/sub                 |
-| DDS       | `transport_dust_dds` |  703 | Real-time, mission-critical              |
+| DDS       | `transport_dust_dds` |  700 | Real-time, mission-critical              |
 | Redis     | `transport_redis`    |  368 | In-memory pub/sub, low-latency messaging |
 
 **Notes:**
  - *Core library: 1,402 lines, including In-memory.*
- - *Total: 3,204 lines.*
+ - *Total: 3,201 lines.*
  - *SLOC measured using `tokei` (crates.io methodology).*
 
 Example: An application using only the MQTT transport compiles 1402 + 418 = 1820 lines of `mom-rpc` code.
@@ -518,7 +518,7 @@ This library does not handle authentication. Delegate to:
 - [Complete API reference on docs.rs](https://docs.rs/mom-rpc)
 - [Design patterns and module structure](docs/architecture.md)
 - [Development guide and standards](CONTRIBUTING.md)
-- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.9.3)
+- [Release notes](https://github.com/JohnBasrai/mom-rpc/releases/tag/v0.9.4)
 
 ---
 
