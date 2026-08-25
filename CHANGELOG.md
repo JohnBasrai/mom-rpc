@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
+## [0.9.5] - 2026-08-25
+
+### Dependencies
+
+- Refreshed the lockfile, including `anyhow` 1.0.102 -> 1.0.104,
+  `bytes` 1.11.1 -> 1.12.1, `lapin` 4.5.0 -> 4.10.0,
+  `redis` 1.2.0 -> 1.6.0, `serde_json` 1.0.149 -> 1.0.151,
+  `tokio` 1.52.1 -> 1.53.1, and `uuid` 1.23.1 -> 1.25.0.
+
 ---
 
 ## [0.9.4] - 2026-06-20
