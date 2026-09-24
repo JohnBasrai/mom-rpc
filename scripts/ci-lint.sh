@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "==> Running lint checks"
 
-cargo fmt --all -- --check
+cargo xfmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 
 echo "==> Lint OK"

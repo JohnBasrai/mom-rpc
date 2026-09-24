@@ -12,10 +12,8 @@
 //! - Caps delay at `max_delay` to prevent excessive wait times
 //! - Logs each retry attempt with timing information for debugging
 
-use std::collections::hash_map::RandomState;
-use std::future::Future;
-use std::hash::BuildHasher;
-use std::time::Duration;
+use std::{collections::hash_map::RandomState, future::Future, hash::BuildHasher, time::Duration};
+
 use tokio::time::sleep;
 
 /// Retry configuration with exponential backoff.
@@ -26,7 +24,8 @@ use tokio::time::sleep;
 ///
 /// Configure retry behavior through `RpcBrokerBuilder::retry_config()`.
 #[derive(Debug, Clone)]
-pub struct RetryConfig {
+pub struct RetryConfig
+{
     /// Maximum number of retry attempts (0 = no retries, just the initial attempt).
     pub max_attempts: u32,
 
@@ -42,14 +41,16 @@ pub struct RetryConfig {
     pub max_delay: Duration,
 }
 
-impl Default for RetryConfig {
+impl Default for RetryConfig
+{
     /// Reasonable default retry configuration.
     ///
     /// - `max_attempts`: 3
     /// - `multiplier`: 2.0 (exponential backoff)
     /// - `initial_delay`: 100ms
     /// - `max_delay`: 5s
-    fn default() -> Self {
+    fn default() -> Self
+    {
         // ---
         Self {
             max_attempts: 3,
@@ -98,9 +99,11 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = crate::Result<T>>,
 {
-    let retry_config = match retry_config {
+    let retry_config = match retry_config
+    {
         Some(cfg) => cfg,
-        None => {
+        None =>
+        {
             // No retry configured, just execute once
             return operation().await;
         }
@@ -109,14 +112,18 @@ where
     let mut attempt = 0;
     let mut current_delay = retry_config.initial_delay;
 
-    loop {
-        match operation().await {
+    loop
+    {
+        match operation().await
+        {
             Ok(result) => return Ok(result),
-            Err(crate::RpcError::TransportRetryable(details)) => {
+            Err(crate::RpcError::TransportRetryable(details)) =>
+            {
                 attempt += 1;
 
                 // Check if we've exhausted retry attempts
-                if attempt > retry_config.max_attempts {
+                if attempt > retry_config.max_attempts
+                {
                     crate::log_debug!(
                         "retry exhausted after {} attempts, last error: {}",
                         retry_config.max_attempts,
@@ -144,7 +151,8 @@ where
                 );
                 current_delay = next_delay.min(retry_config.max_delay);
             }
-            Err(err) => {
+            Err(err) =>
+            {
                 // Non-retryable error, fail immediately
                 return Err(err);
             }
@@ -155,7 +163,8 @@ where
 /// Apply ±25% jitter to a duration to prevent thundering herd.
 ///
 /// Uses a simple multiplicative jitter: `delay * (0.75 + random(0.0..0.5))`
-fn apply_jitter(delay: Duration) -> Duration {
+fn apply_jitter(delay: Duration) -> Duration
+{
     // ---
     let random_state = RandomState::new();
     let hash = random_state.hash_one(std::time::SystemTime::now());
@@ -171,14 +180,19 @@ fn apply_jitter(delay: Duration) -> Duration {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests
+{
     // ---
+    use std::{
+        sync::{Arc, Mutex},
+        time::Instant,
+    };
+
     use super::*;
-    use std::sync::{Arc, Mutex};
-    use std::time::Instant;
 
     #[tokio::test]
-    async fn test_no_retry_on_success() {
+    async fn test_no_retry_on_success()
+    {
         // ---
         let config = RetryConfig::default();
         let call_count = Arc::new(Mutex::new(0));
@@ -199,7 +213,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_none_config_executes_once() {
+    async fn test_none_config_executes_once()
+    {
         // ---
         let call_count = Arc::new(Mutex::new(0));
         let call_count_clone = call_count.clone();
@@ -222,7 +237,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_on_retryable_error() {
+    async fn test_retry_on_retryable_error()
+    {
         // ---
         let retry_config = RetryConfig {
             max_attempts: 3,
@@ -241,11 +257,14 @@ mod tests {
                 let attempt = *c;
                 drop(c);
 
-                if attempt < 3 {
+                if attempt < 3
+                {
                     Err(crate::RpcError::TransportRetryable(
                         "simulated failure".into(),
                     ))
-                } else {
+                }
+                else
+                {
                     Ok(42)
                 }
             }
@@ -257,7 +276,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_exhaustion() {
+    async fn test_retry_exhaustion()
+    {
         // ---
         let retry_config = RetryConfig {
             max_attempts: 2,
@@ -288,7 +308,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_no_retry_on_non_retryable_error() {
+    async fn test_no_retry_on_non_retryable_error()
+    {
         // ---
         let config = RetryConfig::default();
         let call_count = Arc::new(Mutex::new(0));
@@ -310,7 +331,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_exponential_backoff_timing() {
+    async fn test_exponential_backoff_timing()
+    {
         // ---
         let retry_config = RetryConfig {
             max_attempts: 3,
@@ -343,7 +365,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_max_delay_cap() {
+    async fn test_max_delay_cap()
+    {
         // ---
         let retry_config = RetryConfig {
             max_attempts: 5,
@@ -370,12 +393,14 @@ mod tests {
     }
 
     #[test]
-    fn test_jitter_range() {
+    fn test_jitter_range()
+    {
         // ---
         let delay = Duration::from_millis(100);
 
         // Test multiple times to ensure jitter stays in range
-        for _ in 0..100 {
+        for _ in 0..100
+        {
             let jittered = apply_jitter(delay);
 
             // Should be 75ms..125ms (±25%)

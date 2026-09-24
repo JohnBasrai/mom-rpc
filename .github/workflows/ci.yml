@@ -17,6 +17,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install formatting tools
+        run: cargo binstall --no-confirm cargo-xfmt
+
       - name: Run lint
         run: ./scripts/ci-lint.sh
 

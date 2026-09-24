@@ -55,7 +55,8 @@ use crate::{Result, RpcError, TransportPtr};
 /// # Ok(())
 /// # }
 /// ```
-pub struct TransportBuilder {
+pub struct TransportBuilder
+{
     uri: Option<String>,
     node_id: Option<String>,
     request_queue: Option<String>,
@@ -69,9 +70,11 @@ pub struct TransportBuilder {
     called_full_duplex: bool,
 }
 
-impl TransportBuilder {
+impl TransportBuilder
+{
     /// Create a new transport builder.
-    pub fn new() -> Self {
+    pub fn new() -> Self
+    {
         Self {
             uri: None,
             node_id: None,
@@ -91,7 +94,8 @@ impl TransportBuilder {
     /// - `"mqtt://localhost:1883"`
     /// - `"amqp://localhost:5672/%2f"`
     /// - `"dds:45"` (DDS domain 45)
-    pub fn uri(mut self, uri: impl Into<String>) -> Self {
+    pub fn uri(mut self, uri: impl Into<String>) -> Self
+    {
         self.uri = Some(uri.into());
         self
     }
@@ -99,7 +103,8 @@ impl TransportBuilder {
     /// Set the node ID (required).
     ///
     /// Used to generate default queue names when using mode sugar methods.
-    pub fn node_id(mut self, id: impl Into<String>) -> Self {
+    pub fn node_id(mut self, id: impl Into<String>) -> Self
+    {
         self.node_id = Some(id.into());
         self
     }
@@ -107,7 +112,8 @@ impl TransportBuilder {
     /// Set explicit request queue name.
     ///
     /// Cannot be used together with mode sugar methods (`client_mode()`, etc).
-    pub fn request_queue(mut self, queue: impl Into<String>) -> Self {
+    pub fn request_queue(mut self, queue: impl Into<String>) -> Self
+    {
         self.request_queue = Some(queue.into());
         self
     }
@@ -115,7 +121,8 @@ impl TransportBuilder {
     /// Set explicit response queue name.
     ///
     /// Cannot be used together with mode sugar methods (`client_mode()`, etc).
-    pub fn response_queue(mut self, queue: impl Into<String>) -> Self {
+    pub fn response_queue(mut self, queue: impl Into<String>) -> Self
+    {
         self.response_queue = Some(queue.into());
         self
     }
@@ -125,7 +132,8 @@ impl TransportBuilder {
     /// Auto-generates: `response_queue("responses/{node_id}")`
     ///
     /// Cannot be used together with explicit queue methods or other sugar methods.
-    pub fn client_mode(mut self) -> Self {
+    pub fn client_mode(mut self) -> Self
+    {
         self.called_client_mode = true;
         self
     }
@@ -135,7 +143,8 @@ impl TransportBuilder {
     /// Auto-generates: `request_queue("requests/{node_id}")`
     ///
     /// Cannot be used together with explicit queue methods or other sugar methods.
-    pub fn server_mode(mut self) -> Self {
+    pub fn server_mode(mut self) -> Self
+    {
         self.called_server_mode = true;
         self
     }
@@ -147,7 +156,8 @@ impl TransportBuilder {
     /// - `response_queue("responses/{node_id}")`
     ///
     /// Cannot be used together with explicit queue methods or other sugar methods.
-    pub fn full_duplex(mut self) -> Self {
+    pub fn full_duplex(mut self) -> Self
+    {
         self.called_full_duplex = true;
         self
     }
@@ -157,7 +167,8 @@ impl TransportBuilder {
     /// Valid values: `"memory"`, `"rumqttc"`, `"lapin"`, `"dust-dds"`
     ///
     /// If not specified, uses feature-flag driven selection (current behavior).
-    pub fn transport_type(mut self, flag: impl Into<String>) -> Self {
+    pub fn transport_type(mut self, flag: impl Into<String>) -> Self
+    {
         self.transport_type = Some(flag.into());
         self
     }
@@ -165,7 +176,8 @@ impl TransportBuilder {
     /// Set broker keep-alive interval in seconds.
     ///
     /// If not specified, uses transport default.
-    pub fn keep_alive_secs(mut self, secs: u16) -> Self {
+    pub fn keep_alive_secs(mut self, secs: u16) -> Self
+    {
         self.keep_alive_secs = Some(secs);
         self
     }
@@ -180,7 +192,8 @@ impl TransportBuilder {
     /// - Multiple sugar methods called
     /// - Both sugar methods and explicit queues used
     /// - Transport creation fails
-    pub async fn build(mut self) -> Result<TransportPtr> {
+    pub async fn build(mut self) -> Result<TransportPtr>
+    {
         // Validate required fields
         let uri = self
             .uri
@@ -201,7 +214,8 @@ impl TransportBuilder {
         .count();
 
         // Detect multiple sugar methods
-        if sugar_count > 1 {
+        if sugar_count > 1
+        {
             return Err(RpcError::ConfigConflict(
                 "Cannot call multiple mode sugar methods (client_mode, server_mode, full_duplex)"
                     .into(),
@@ -210,31 +224,39 @@ impl TransportBuilder {
 
         // Check for conflicts between sugar and explicit
         let has_explicit_queues = self.request_queue.is_some() || self.response_queue.is_some();
-        if sugar_count > 0 && has_explicit_queues {
+        if sugar_count > 0 && has_explicit_queues
+        {
             return Err(RpcError::ConfigConflict(
                 "Cannot use both mode sugar methods and explicit queue configuration".into(),
             ));
         }
 
         // If sugar mode was used, generate queue names based on which flag is set
-        if self.called_client_mode {
+        if self.called_client_mode
+        {
             self.response_queue = Some(format!("responses/{node_id}"));
-        } else if self.called_server_mode {
+        }
+        else if self.called_server_mode
+        {
             self.request_queue = Some(format!("requests/{node_id}"));
-        } else if self.called_full_duplex {
+        }
+        else if self.called_full_duplex
+        {
             self.request_queue = Some(format!("requests/{node_id}"));
             self.response_queue = Some(format!("responses/{node_id}"));
         }
 
         // Validate at least one queue is specified
-        if self.request_queue.is_none() && self.response_queue.is_none() {
+        if self.request_queue.is_none() && self.response_queue.is_none()
+        {
             return Err(RpcError::MissingConfig(
                 "at least one queue (request or response) or a mode method".into(),
             ));
         }
 
         // Infer mode from which queues are set
-        let mode = match (&self.request_queue, &self.response_queue) {
+        let mode = match (&self.request_queue, &self.response_queue)
+        {
             (Some(_), Some(_)) => crate::TransportMode::FullDuplex,
             (Some(_), None) => crate::TransportMode::Server,
             (None, Some(_)) => crate::TransportMode::Client,
@@ -257,7 +279,8 @@ impl TransportBuilder {
         // When None, try each factory in priority order (dust_dds → rumqttc → lapin → memory).
         // Disabled transports return Err immediately via the Null Object stubs, so the
         // first Ok() wins. Memory is the unconditional fallback.
-        match self.transport_type.as_deref() {
+        match self.transport_type.as_deref()
+        {
             Some("rumqttc") => crate::create_rumqttc_transport(config).await,
             Some("lapin") => crate::create_lapin_transport(config).await,
             Some("dust-dds") => crate::create_dust_dds_transport(config).await,
@@ -266,17 +289,22 @@ impl TransportBuilder {
             Some(other) => Err(RpcError::Transport(format!(
                 "unrecognized transport_type: {other}, valid values: memory, rumqttc, lapin, dust-dds, redis"
             ))),
-            None => {
-                if let Ok(t) = crate::create_dust_dds_transport(config.clone()).await {
+            None =>
+            {
+                if let Ok(t) = crate::create_dust_dds_transport(config.clone()).await
+                {
                     return Ok(t);
                 }
-                if let Ok(t) = crate::create_rumqttc_transport(config.clone()).await {
+                if let Ok(t) = crate::create_rumqttc_transport(config.clone()).await
+                {
                     return Ok(t);
                 }
-                if let Ok(t) = crate::create_lapin_transport(config.clone()).await {
+                if let Ok(t) = crate::create_lapin_transport(config.clone()).await
+                {
                     return Ok(t);
                 }
-                if let Ok(t) = crate::create_redis_transport(config.clone()).await {
+                if let Ok(t) = crate::create_redis_transport(config.clone()).await
+                {
                     return Ok(t);
                 }
                 crate::create_memory_transport(config).await
@@ -285,8 +313,10 @@ impl TransportBuilder {
     }
 }
 
-impl Default for TransportBuilder {
-    fn default() -> Self {
+impl Default for TransportBuilder
+{
+    fn default() -> Self
+    {
         Self::new()
     }
 }

@@ -14,7 +14,8 @@ pub use dust_dds::create_transport as create_dust_dds_transport;
 #[cfg(not(feature = "transport_dust_dds"))]
 pub async fn create_dust_dds_transport(
     _config: crate::TransportConfig,
-) -> crate::Result<crate::TransportPtr> {
+) -> crate::Result<crate::TransportPtr>
+{
     Err(crate::RpcError::Transport(
         "transport_dust_dds feature is not enabled".into(),
     ))

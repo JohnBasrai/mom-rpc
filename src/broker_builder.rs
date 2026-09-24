@@ -3,8 +3,9 @@
 //! Provides a fluent builder API for configuring RPC broker instances
 //! with retry and timeout settings.
 
-use crate::{Result, RpcBroker, TransportPtr};
 use std::time::Duration;
+
+use crate::{Result, RpcBroker, TransportPtr};
 
 /// Builder for creating RPC broker instances.
 ///
@@ -53,7 +54,8 @@ use std::time::Duration;
 /// # Ok(())
 /// # }
 /// ```
-pub struct RpcBrokerBuilder {
+pub struct RpcBrokerBuilder
+{
     // ---
     transport: TransportPtr,
     node_id: Option<String>,
@@ -68,13 +70,15 @@ pub struct RpcBrokerBuilder {
     request_total_timeout: Option<Duration>,
 }
 
-impl RpcBrokerBuilder {
+impl RpcBrokerBuilder
+{
     /// Create a new broker builder.
     ///
     /// Mode is inferred automatically from the transport's queue configuration.
     /// The broker's `node_id` defaults to `transport.transport_id()`; override
     /// with [`.node_id()`](Self::node_id) when sharing a transport between brokers.
-    pub fn new(transport: TransportPtr) -> Self {
+    pub fn new(transport: TransportPtr) -> Self
+    {
         // ---
         Self {
             transport,
@@ -92,7 +96,8 @@ impl RpcBrokerBuilder {
     /// By default the broker uses `transport.transport_id()` as its node ID.
     /// This setter allows a different ID when multiple brokers share the same
     /// transport instance (common in memory-transport tests).
-    pub fn node_id(mut self, id: impl Into<String>) -> Self {
+    pub fn node_id(mut self, id: impl Into<String>) -> Self
+    {
         self.node_id = Some(id.into());
         self
     }
@@ -100,7 +105,8 @@ impl RpcBrokerBuilder {
     /// Set maximum retry attempts.
     ///
     /// Default: 3 (three attempts).
-    pub fn retry_max_attempts(mut self, attempts: u32) -> Self {
+    pub fn retry_max_attempts(mut self, attempts: u32) -> Self
+    {
         self.retry_max_attempts = Some(attempts);
         self
     }
@@ -111,7 +117,8 @@ impl RpcBrokerBuilder {
     /// capped at `retry_max_delay`.
     ///
     /// Default: 2.0 (doubles the delay each retry).
-    pub fn retry_multiplier(mut self, multiplier: f32) -> Self {
+    pub fn retry_multiplier(mut self, multiplier: f32) -> Self
+    {
         self.retry_multiplier = Some(multiplier);
         self
     }
@@ -123,7 +130,8 @@ impl RpcBrokerBuilder {
     /// `multiplier=2.0`: 100ms → 200ms → 400ms → ...
     ///
     /// Default: 100ms
-    pub fn retry_initial_delay(mut self, delay: Duration) -> Self {
+    pub fn retry_initial_delay(mut self, delay: Duration) -> Self
+    {
         self.retry_initial_delay = Some(delay);
         self
     }
@@ -131,7 +139,8 @@ impl RpcBrokerBuilder {
     /// Set maximum delay between retry attempts.
     ///
     /// Default: 5s.
-    pub fn retry_max_delay(mut self, delay: Duration) -> Self {
+    pub fn retry_max_delay(mut self, delay: Duration) -> Self
+    {
         self.retry_max_delay = Some(delay);
         self
     }
@@ -149,17 +158,20 @@ impl RpcBrokerBuilder {
     /// 30s total timeout.
     ///
     /// Default: 30 seconds
-    pub fn request_total_timeout(mut self, timeout: Duration) -> Self {
+    pub fn request_total_timeout(mut self, timeout: Duration) -> Self
+    {
         self.request_total_timeout = Some(timeout);
         self
     }
 
     /// Build the RPC broker (consumes self).
-    pub fn build(self) -> Result<RpcBroker> {
+    pub fn build(self) -> Result<RpcBroker>
+    {
         // ---
         use crate::TransportMode;
 
-        let mode = match self.transport.mode() {
+        let mode = match self.transport.mode()
+        {
             TransportMode::Client => crate::BrokerMode::Client,
             TransportMode::Server => crate::BrokerMode::Server,
             TransportMode::FullDuplex => crate::BrokerMode::FullDuplex,
@@ -184,7 +196,9 @@ impl RpcBrokerBuilder {
                     .unwrap_or(Duration::from_millis(100)),
                 max_delay: self.retry_max_delay.unwrap_or(Duration::from_secs(5)),
             })
-        } else {
+        }
+        else
+        {
             None
         };
 

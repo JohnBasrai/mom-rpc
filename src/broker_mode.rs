@@ -10,7 +10,8 @@
 /// - [`Server`](BrokerMode::Server): Can `register_rpc_handler()` handlers, cannot call `request_to()`
 /// - [`FullDuplex`](BrokerMode::FullDuplex): Can both `register_rpc_handler()` and `request_to()`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BrokerMode {
+pub enum BrokerMode
+{
     /// Client mode - subscribes to response queue, publishes to request queues.
     ///
     /// Allows: `request_to()`  

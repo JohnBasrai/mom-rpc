@@ -14,7 +14,8 @@ pub use redis::create_transport as create_redis_transport;
 #[cfg(not(feature = "transport_redis"))]
 pub async fn create_redis_transport(
     _config: crate::TransportConfig,
-) -> crate::Result<crate::TransportPtr> {
+) -> crate::Result<crate::TransportPtr>
+{
     Err(crate::RpcError::Transport(
         "transport_redis feature is not enabled".into(),
     ))

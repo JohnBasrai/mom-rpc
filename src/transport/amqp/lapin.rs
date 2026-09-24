@@ -58,7 +58,13 @@
 //! This module intentionally avoids exposing AMQP-specific concepts
 //! (exchanges, routing keys, message properties) outside the transport boundary.
 
+use std::{collections::HashMap, sync::Arc};
+
 use lapin::{
+    BasicProperties,
+    Channel,
+    Connection,
+    ConnectionProperties,
     //
     options::{
         //
@@ -68,23 +74,13 @@ use lapin::{
         QueueDeclareOptions,
     },
     types::FieldTable,
-    BasicProperties,
-    Channel,
-    Connection,
-    ConnectionProperties,
+};
+use tokio::{
+    sync::{RwLock, mpsc, oneshot},
+    task::JoinHandle,
 };
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use tokio::sync::{mpsc, oneshot, RwLock};
-use tokio::task::JoinHandle;
-
 use crate::{
-    //
-    log_debug,
-    log_error,
-    log_info,
     Envelope,
     Result,
     RpcError,
@@ -94,6 +90,10 @@ use crate::{
     TransportBase,
     TransportConfig,
     TransportPtr,
+    //
+    log_debug,
+    log_error,
+    log_info,
 };
 
 type SubscriberMap = Arc<RwLock<HashMap<String, Vec<mpsc::Sender<Envelope>>>>>;
@@ -103,22 +103,27 @@ type TaskList = Arc<RwLock<Vec<JoinHandle<()>>>>;
 // Actor commands
 //
 
-enum Cmd {
+enum Cmd
+{
     //
-    Publish {
+    Publish
+    {
         env: Envelope,
         resp: oneshot::Sender<Result<()>>,
     },
-    Subscribe {
+    Subscribe
+    {
         queue: String,
         resp: oneshot::Sender<Result<()>>,
     },
-    Close {
-        resp: oneshot::Sender<Result<()>>,
+    Close
+    {
+        resp: oneshot::Sender<Result<()>>
     },
 }
 
-enum ActorStep {
+enum ActorStep
+{
     //
     Cmd(Cmd),
     Closed,
@@ -128,7 +133,8 @@ enum ActorStep {
 ///
 /// This struct is cheap to clone (Arc-based internally) and implements
 /// `Send + Sync` for use across async boundaries.
-pub struct AmqpTransport {
+pub struct AmqpTransport
+{
     // ---
     base: TransportBase,
     cmd_tx: mpsc::Sender<Cmd>,
@@ -136,11 +142,13 @@ pub struct AmqpTransport {
     tasks: TaskList,
 }
 
-impl AmqpTransport {
+impl AmqpTransport
+{
     /// Creates a new AMQP transport with the given connection and channel.
     ///
     /// Spawns a background actor task to handle AMQP operations.
-    fn create(base: TransportBase, connection: Connection, channel: Channel) -> TransportPtr {
+    fn create(base: TransportBase, connection: Connection, channel: Channel) -> TransportPtr
+    {
         // ---
         let transport_id = base.transport_id.clone();
 
@@ -178,7 +186,8 @@ impl AmqpTransport {
 }
 
 /// Background actor task that owns the AMQP connection and channel.
-struct Actor {
+struct Actor
+{
     // ---
     transport_id: String,
     connection: Connection,
@@ -188,17 +197,23 @@ struct Actor {
     consumer_handles: HashMap<String, JoinHandle<()>>,
 }
 
-impl Actor {
-    async fn run(mut self) {
+impl Actor
+{
+    async fn run(mut self)
+    {
         // ---
         log_info!("[{}] AMQP actor started", self.transport_id);
 
-        loop {
-            match self.next_step().await {
-                ActorStep::Cmd(cmd) => {
+        loop
+        {
+            match self.next_step().await
+            {
+                ActorStep::Cmd(cmd) =>
+                {
                     self.handle_cmd(cmd).await;
                 }
-                ActorStep::Closed => {
+                ActorStep::Closed =>
+                {
                     log_info!("[{}] AMQP actor shutting down", self.transport_id);
                     break;
                 }
@@ -206,7 +221,8 @@ impl Actor {
         }
 
         // Clean up consumer tasks
-        for (_, handle) in self.consumer_handles.drain() {
+        for (_, handle) in self.consumer_handles.drain()
+        {
             handle.abort();
         }
 
@@ -217,33 +233,41 @@ impl Actor {
         log_info!("[{}] AMQP actor stopped", self.transport_id);
     }
 
-    async fn next_step(&mut self) -> ActorStep {
+    async fn next_step(&mut self) -> ActorStep
+    {
         // ---
-        match self.cmd_rx.recv().await {
+        match self.cmd_rx.recv().await
+        {
             Some(cmd) => ActorStep::Cmd(cmd),
             None => ActorStep::Closed,
         }
     }
 
-    async fn handle_cmd(&mut self, cmd: Cmd) {
+    async fn handle_cmd(&mut self, cmd: Cmd)
+    {
         // ---
-        match cmd {
-            Cmd::Publish { env, resp } => {
+        match cmd
+        {
+            Cmd::Publish { env, resp } =>
+            {
                 let result = self.do_publish(env).await;
                 let _ = resp.send(result);
             }
-            Cmd::Subscribe { queue, resp } => {
+            Cmd::Subscribe { queue, resp } =>
+            {
                 let result = self.do_subscribe(queue).await;
                 let _ = resp.send(result);
             }
-            Cmd::Close { resp } => {
+            Cmd::Close { resp } =>
+            {
                 let _ = resp.send(Ok(()));
                 self.cmd_rx.close();
             }
         }
     }
 
-    async fn do_publish(&mut self, env: Envelope) -> Result<()> {
+    async fn do_publish(&mut self, env: Envelope) -> Result<()>
+    {
         // ---
         let queue = env.address.0.as_ref();
         let payload = serde_json::to_vec(&env)
@@ -264,7 +288,8 @@ impl Actor {
         Ok(())
     }
 
-    async fn do_subscribe(&mut self, queue: String) -> Result<()> {
+    async fn do_subscribe(&mut self, queue: String) -> Result<()>
+    {
         // ---
 
         // Declare queue if not already declared
@@ -284,7 +309,8 @@ impl Actor {
         log_info!("[{}] Declared queue: {queue}", self.transport_id);
 
         // Start consumer if not already consuming this queue
-        if self.consumer_handles.contains_key(&queue) {
+        if self.consumer_handles.contains_key(&queue)
+        {
             log_debug!("[{}] Already consuming queue: {queue}", self.transport_id);
             return Ok(());
         }
@@ -311,21 +337,27 @@ impl Actor {
             use futures_lite::stream::StreamExt;
 
             let mut consumer = consumer;
-            while let Some(delivery_result) = consumer.next().await {
-                match delivery_result {
-                    Ok(delivery) => {
+            while let Some(delivery_result) = consumer.next().await
+            {
+                match delivery_result
+                {
+                    Ok(delivery) =>
+                    {
                         log_debug!("[{transport_id}] Received message on queue: {queue_clone}");
 
                         // Ack the message
-                        if let Err(e) = delivery.ack(BasicAckOptions::default()).await {
+                        if let Err(e) = delivery.ack(BasicAckOptions::default()).await
+                        {
                             log_error!("[{transport_id}] Failed to ack message: {e}");
                             continue;
                         }
 
                         // Deserialize envelope
-                        let envelope: Envelope = match serde_json::from_slice(&delivery.data) {
+                        let envelope: Envelope = match serde_json::from_slice(&delivery.data)
+                        {
                             Ok(env) => env,
-                            Err(e) => {
+                            Err(e) =>
+                            {
                                 log_error!("[{transport_id}] Failed to deserialize envelope: {e}");
                                 continue;
                             }
@@ -333,9 +365,12 @@ impl Actor {
 
                         // Fanout to local subscribers
                         let subs = subscribers.read().await;
-                        if let Some(senders) = subs.get(&queue_clone) {
-                            for sender in senders {
-                                if let Err(e) = sender.send(envelope.clone()).await {
+                        if let Some(senders) = subs.get(&queue_clone)
+                        {
+                            for sender in senders
+                            {
+                                if let Err(e) = sender.send(envelope.clone()).await
+                                {
                                     log_error!(
                                         "[{transport_id}] Failed to send to subscriber: {e}"
                                     );
@@ -343,7 +378,8 @@ impl Actor {
                             }
                         }
                     }
-                    Err(e) => {
+                    Err(e) =>
+                    {
                         log_error!("[{transport_id}] Consumer error on {queue_clone}: {e}");
                         break;
                     }
@@ -360,13 +396,16 @@ impl Actor {
 }
 
 #[async_trait::async_trait]
-impl Transport for AmqpTransport {
+impl Transport for AmqpTransport
+{
     // ---
-    fn base(&self) -> &TransportBase {
+    fn base(&self) -> &TransportBase
+    {
         &self.base
     }
 
-    async fn publish(&self, env: Envelope) -> Result<()> {
+    async fn publish(&self, env: Envelope) -> Result<()>
+    {
         // ---
         let (tx, rx) = oneshot::channel();
 
@@ -384,7 +423,8 @@ impl Transport for AmqpTransport {
         })?
     }
 
-    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
+    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle>
+    {
         // ---
 
         let queue = sub.0.as_ref().to_string();
@@ -416,7 +456,8 @@ impl Transport for AmqpTransport {
         Ok(SubscriptionHandle { inbox: rx })
     }
 
-    async fn close(&self) -> Result<()> {
+    async fn close(&self) -> Result<()>
+    {
         // ---
 
         let (tx, rx) = oneshot::channel();
@@ -425,7 +466,8 @@ impl Transport for AmqpTransport {
         let _ = rx.await;
 
         let mut tasks = self.tasks.write().await;
-        while let Some(handle) = tasks.pop() {
+        while let Some(handle) = tasks.pop()
+        {
             let _ = handle.await;
         }
 
@@ -444,7 +486,8 @@ impl Transport for AmqpTransport {
 /// # Connection Behavior
 ///
 /// The connection to the broker happens immediately during transport creation.
-pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
+pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr>
+{
     // ---
 
     let (connection, channel) = create_amqp_connection(&config).await?;
@@ -456,11 +499,13 @@ pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
 }
 
 /// Creates an AMQP connection and channel from the given configuration.
-async fn create_amqp_connection(config: &TransportConfig) -> Result<(Connection, Channel)> {
+async fn create_amqp_connection(config: &TransportConfig) -> Result<(Connection, Channel)>
+{
     // ---
 
     let uri = &config.uri;
-    if uri.is_empty() {
+    if uri.is_empty()
+    {
         return Err(RpcError::Transport(
             "AMQP transport requires URI".to_string(),
         ));

@@ -103,7 +103,7 @@ If tests fail locally but pass in CI (or vice versa):
 If formatting check fails:
 
 ```bash
-cargo fmt
+cargo xfmt
 ./scripts/ci-lint.sh
 ```
 

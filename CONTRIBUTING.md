@@ -27,6 +27,7 @@ Or for comprehensive testing:
 - Keep commits focused and descriptive
 - Add tests for new features
 - Update `CHANGELOG.md` under [Unreleased] if behavior changes
+- Run `cargo xfmt` after changing Rust code
 - Verify all CI checks pass locally
 
 We follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Semantic Versioning](https://semver.org/).
@@ -42,7 +43,8 @@ We follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Semantic
 
 ## Quick Reference
 
-- **Format code:** `./scripts/ci-lint.sh`
+- **Format code:** `cargo xfmt`
+- **Check formatting and lints:** `./scripts/ci-lint.sh`
 - **Run tests:** `./scripts/ci-test.sh`
 - **Full CI check:** `./scripts/local-test.sh`
 - **Documentation:** `cargo doc --open`

@@ -14,19 +14,21 @@
 //! retries, or timeouts are handled elsewhere.
 //!
 //! Concrete implementations of this interface live under `src/transport/`.
-use crate::Result;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use bytes::Bytes;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+
+use crate::Result;
 
 /// Operational mode of a transport.
 ///
 /// Determines which queues the transport subscribes to and which
 /// RPC operations are valid on the resulting broker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransportMode {
+pub enum TransportMode
+{
     // ---
     /// Subscribes to response queue only. Supports `request_to()`.
     Client,
@@ -57,7 +59,8 @@ pub enum TransportMode {
 ///     fn base(&self) -> &TransportBase { &self.base }
 /// }
 /// ```
-pub struct TransportBase {
+pub struct TransportBase
+{
     /// Unique identifier for this transport instance (the node_id).
     pub transport_id: String,
     /// Operational mode of this transport.
@@ -68,14 +71,16 @@ pub struct TransportBase {
     pub response_queue: Option<String>,
 }
 
-impl TransportBase {
+impl TransportBase
+{
     /// Create a new TransportBase.
     pub fn new(
         transport_id: impl Into<String>,
         mode: TransportMode,
         request_queue: Option<String>,
         response_queue: Option<String>,
-    ) -> Self {
+    ) -> Self
+    {
         Self {
             transport_id: transport_id.into(),
             mode,
@@ -85,12 +90,14 @@ impl TransportBase {
     }
 }
 
-impl From<&TransportConfig> for TransportBase {
+impl From<&TransportConfig> for TransportBase
+{
     /// Construct a `TransportBase` from a `TransportConfig` reference.
     ///
     /// Clones only the fields needed by `TransportBase`, leaving `config`
     /// available for transport-specific use (URI, keep-alive, etc.).
-    fn from(config: &TransportConfig) -> Self {
+    fn from(config: &TransportConfig) -> Self
+    {
         // ---
         Self {
             transport_id: config.node_id.clone(),
@@ -107,7 +114,8 @@ impl From<&TransportConfig> for TransportBase {
 /// [`TransportBuilder`](crate::TransportBuilder) and passed to transport factory
 /// functions. Use `TransportBuilder` to create transports
 #[derive(Clone, Debug)]
-pub struct TransportConfig {
+pub struct TransportConfig
+{
     /// Broker URI (e.g. `"mqtt://localhost:1883"`, `"amqp://localhost:5672/%2f"`)
     pub uri: String,
     /// Node ID for this transport instance.
@@ -144,7 +152,8 @@ impl<T> From<T> for Address
 where
     T: Into<Arc<str>>,
 {
-    fn from(value: T) -> Self {
+    fn from(value: T) -> Self
+    {
         // ---
         Address(value.into())
     }
@@ -165,8 +174,10 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Subscription(pub Arc<str>);
 
-impl From<Address> for Subscription {
-    fn from(address: Address) -> Self {
+impl From<Address> for Subscription
+{
+    fn from(address: Address) -> Self
+    {
         // ---
         Subscription(address.0)
     }
@@ -176,7 +187,8 @@ impl<T> From<T> for Subscription
 where
     T: Into<Arc<str>>,
 {
-    fn from(value: T) -> Self {
+    fn from(value: T) -> Self
+    {
         // ---
         Subscription(value.into())
     }
@@ -223,7 +235,8 @@ where
 /// );
 /// ```
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Envelope {
+pub struct Envelope
+{
     // ---
     /// Delivery address used by the transport.
     ///
@@ -260,7 +273,8 @@ pub struct Envelope {
     pub content_type: Option<Arc<str>>,
 }
 
-impl Envelope {
+impl Envelope
+{
     // ---
     /// Create a request envelope.
     ///
@@ -279,7 +293,8 @@ impl Envelope {
         correlation_id: Arc<str>,
         reply_to: Address,
         content_type: Arc<str>,
-    ) -> Self {
+    ) -> Self
+    {
         // ---
         Self {
             address,
@@ -304,7 +319,8 @@ impl Envelope {
         payload: Bytes,
         correlation_id: Arc<str>,
         content_type: Arc<str>,
-    ) -> Self {
+    ) -> Self
+    {
         // ---
         Self {
             method: None,
@@ -347,7 +363,8 @@ impl Envelope {
 /// # Ok(())
 /// # }
 /// ```
-pub struct SubscriptionHandle {
+pub struct SubscriptionHandle
+{
     // ---
     /// Receiver channel for delivered envelopes matching this subscription.
     pub inbox: mpsc::Receiver<Envelope>,
@@ -392,7 +409,8 @@ pub struct SubscriptionHandle {
 /// should treat methods as normal `async fn`s.
 #[async_trait::async_trait]
 #[allow(dead_code)]
-pub trait Transport: Send + Sync {
+pub trait Transport: Send + Sync
+{
     // ---
     /// Returns a reference to the shared base state.
     ///
@@ -403,14 +421,16 @@ pub trait Transport: Send + Sync {
     /// Returns the transport_id of the transport.
     ///
     /// Default implementation delegates to `base()`.
-    fn transport_id(&self) -> &str {
+    fn transport_id(&self) -> &str
+    {
         &self.base().transport_id
     }
 
     /// Returns the operational mode of the transport.
     ///
     /// Default implementation delegates to `base()`.
-    fn mode(&self) -> TransportMode {
+    fn mode(&self) -> TransportMode
+    {
         self.base().mode
     }
 

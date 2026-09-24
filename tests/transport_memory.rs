@@ -8,8 +8,6 @@
 )]
 
 use bytes::Bytes;
-use tokio::time::{timeout, Duration};
-
 use mom_rpc::{
     // ---
     Address,
@@ -19,9 +17,11 @@ use mom_rpc::{
     TransportConfig,
     TransportMode,
 };
+use tokio::time::{Duration, timeout};
 
 #[tokio::test]
-async fn memory_subscribe_then_publish_delivers() {
+async fn memory_subscribe_then_publish_delivers()
+{
     // ---
     // Arrange
     // ---

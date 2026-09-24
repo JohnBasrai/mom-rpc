@@ -111,12 +111,7 @@ mod error;
 pub use broker::RpcBroker;
 pub use broker_builder::RpcBrokerBuilder;
 pub use broker_mode::BrokerMode;
-pub(crate) use retry::RetryConfig;
-pub use transport_builder::TransportBuilder;
-
 pub use correlation::CorrelationId;
-pub use error::{Result, RpcError};
-
 pub use domain::{
     // ---
     Address,
@@ -129,7 +124,15 @@ pub use domain::{
     TransportMode,
     TransportPtr,
 };
-
+pub use error::{Result, RpcError};
+pub(crate) use retry::RetryConfig;
+////////////////////////////////////////
+// Internal helpers
+////////////////////////////////////////
+pub(crate) use retry::retry_with_backoff;
+pub use transport::MemoryHub;
+// Protocol transport factories - internal only; users go through TransportBuilder
+pub(crate) use transport::create_dust_dds_transport;
 ////////////////////////////////////////
 // Transport factory functions
 ////////////////////////////////////////
@@ -139,20 +142,13 @@ pub use domain::{
 // mom-rpc's own integration tests and may change without notice.
 // Production code should use TransportBuilder.
 pub use transport::create_memory_transport_with_hub;
-pub use transport::MemoryHub;
-
-// Protocol transport factories - internal only; users go through TransportBuilder
-pub(crate) use transport::create_dust_dds_transport;
-pub(crate) use transport::create_lapin_transport;
-pub(crate) use transport::create_memory_transport;
-pub(crate) use transport::create_redis_transport;
-pub(crate) use transport::create_rumqttc_transport;
-
-////////////////////////////////////////
-// Internal helpers
-////////////////////////////////////////
-
-pub(crate) use retry::retry_with_backoff;
+pub(crate) use transport::{
+    create_lapin_transport,
+    create_memory_transport,
+    create_redis_transport,
+    create_rumqttc_transport,
+};
+pub use transport_builder::TransportBuilder;
 
 mod macros;
 pub(crate) use macros::{log_debug, log_error, log_info, log_warn};

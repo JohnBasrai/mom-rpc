@@ -51,6 +51,8 @@
 //! - Subscriptions create new `DataReader` instances per topic.
 //! - Domain ID parsed from transport_uri format: `dds:45` (domain 45)
 
+use std::{collections::HashMap, sync::Arc};
+
 use dust_dds::{
     //
     dds_async::{
@@ -73,24 +75,18 @@ use dust_dds::{
             ReliabilityQosPolicy,
             ReliabilityQosPolicyKind,
         },
-        sample_info::{SampleStateKind, ANY_INSTANCE_STATE, ANY_VIEW_STATE},
+        sample_info::{ANY_INSTANCE_STATE, ANY_VIEW_STATE, SampleStateKind},
         status::StatusKind,
         time::{Duration as DdsDuration, DurationKind},
         type_support::DdsType,
     },
 };
-
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use tokio::sync::{mpsc, oneshot, watch, RwLock};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{RwLock, mpsc, oneshot, watch},
+    task::JoinHandle,
+};
 
 use crate::{
-    //
-    log_debug,
-    log_error,
-    log_info,
     Envelope,
     Result,
     RpcError,
@@ -100,6 +96,10 @@ use crate::{
     TransportBase,
     TransportConfig,
     TransportPtr,
+    //
+    log_debug,
+    log_error,
+    log_info,
 };
 
 /// Constant type name for all DdsEnvelope topics
@@ -116,17 +116,20 @@ const DDS_TYPE_NAME: &str = "DdsEnvelope";
 /// Bytes which aren't directly DDS-compatible, we serialize the entire envelope
 /// to JSON bytes for DDS transmission.
 #[derive(Clone, Debug, DdsType, serde::Serialize, serde::Deserialize)]
-struct DdsEnvelope {
+struct DdsEnvelope
+{
     /// JSON-serialized Envelope
     topic: String,
     /// JSON-serialized envelope data
     data: Vec<u8>,
 }
 
-impl TryFrom<&Envelope> for DdsEnvelope {
+impl TryFrom<&Envelope> for DdsEnvelope
+{
     type Error = RpcError;
 
-    fn try_from(env: &Envelope) -> Result<Self> {
+    fn try_from(env: &Envelope) -> Result<Self>
+    {
         let data = serde_json::to_vec(env)
             .map_err(|e| RpcError::Transport(format!("DDS envelope serialization failed: {e}")))?;
 
@@ -137,10 +140,12 @@ impl TryFrom<&Envelope> for DdsEnvelope {
     }
 }
 
-impl TryFrom<DdsEnvelope> for Envelope {
+impl TryFrom<DdsEnvelope> for Envelope
+{
     type Error = RpcError;
 
-    fn try_from(dds_env: DdsEnvelope) -> Result<Self> {
+    fn try_from(dds_env: DdsEnvelope) -> Result<Self>
+    {
         serde_json::from_slice(&dds_env.data)
             .map_err(|e| RpcError::Transport(format!("DDS envelope deserialization failed: {e}")))
     }
@@ -153,37 +158,46 @@ type TaskList = Arc<RwLock<Vec<JoinHandle<()>>>>;
 // Actor commands
 //
 
-enum Cmd {
+enum Cmd
+{
     //
-    Publish {
+    Publish
+    {
         topic: String,
         env: Envelope,
         resp: oneshot::Sender<Result<()>>,
     },
-    Subscribe {
+    Subscribe
+    {
         topic: String,
         resp: oneshot::Sender<Result<()>>,
     },
-    Close {
-        resp: oneshot::Sender<Result<()>>,
+    Close
+    {
+        resp: oneshot::Sender<Result<()>>
     },
 }
 
-enum ActorStep {
+enum ActorStep
+{
     //
     Continue,
     Stop,
 }
 
-impl Cmd {
+impl Cmd
+{
     // ---
 
     /// Dispatches an actor command to the correct handler on the actor
-    async fn handle(self, actor: &mut DdsActor) -> ActorStep {
+    async fn handle(self, actor: &mut DdsActor) -> ActorStep
+    {
         // ---
 
-        match self {
-            Cmd::Publish { topic, env, resp } => {
+        match self
+        {
+            Cmd::Publish { topic, env, resp } =>
+            {
                 // ---
                 log_debug!(
                     "{}: Cmd::Publish called for topic {topic}",
@@ -197,7 +211,8 @@ impl Cmd {
                     actor.transport_id
                 );
 
-                if resp.send(result).is_err() {
+                if resp.send(result).is_err()
+                {
                     log_error!(
                         "{}: publish responder dropped before response could be sent",
                         actor.transport_id
@@ -205,7 +220,8 @@ impl Cmd {
                 }
                 ActorStep::Continue
             }
-            Cmd::Subscribe { topic, resp } => {
+            Cmd::Subscribe { topic, resp } =>
+            {
                 // ---
                 log_debug!(
                     "{}: Cmd::Subscribe called for topic {topic}",
@@ -220,13 +236,15 @@ impl Cmd {
 
                 ActorStep::Continue
             }
-            Cmd::Close { resp } => {
+            Cmd::Close { resp } =>
+            {
                 // ---
                 log_debug!("{}: Cmd::Close called", actor.transport_id);
 
                 actor.handle_close().await;
 
-                if resp.send(Ok(())).is_err() {
+                if resp.send(Ok(())).is_err()
+                {
                     log_debug!(
                         "{}: Cmd::Close responder dropped before response could be sent",
                         actor.transport_id
@@ -243,7 +261,8 @@ impl Cmd {
 ///
 /// Represents a single DomainParticipant and provides reliable,
 /// non-durable message delivery consistent with other transports' semantics.
-pub struct DustddsTransport {
+pub struct DustddsTransport
+{
     // ---
     base: TransportBase,
     cmd_tx: mpsc::Sender<Cmd>,
@@ -251,11 +270,13 @@ pub struct DustddsTransport {
     tasks: TaskList,
 }
 
-impl DustddsTransport {
+impl DustddsTransport
+{
     // ---
 
     /// Creates a new dust_dds transport with the given `DomainParticipant`.
-    pub fn create(base: TransportBase, participant: DomainParticipantAsync) -> TransportPtr {
+    pub fn create(base: TransportBase, participant: DomainParticipantAsync) -> TransportPtr
+    {
         // ---
 
         let transport_id = base.transport_id.clone();
@@ -292,7 +313,8 @@ impl DustddsTransport {
     }
 }
 
-struct DdsActor {
+struct DdsActor
+{
     // ---
     transport_id: String, // for logging only
     participant: DomainParticipantAsync,
@@ -303,16 +325,20 @@ struct DdsActor {
     reader_tasks: Vec<JoinHandle<()>>,
 }
 
-impl DdsActor {
+impl DdsActor
+{
     // ---
 
-    async fn run(mut self) {
+    async fn run(mut self)
+    {
         // ---
 
         log_info!("{}: DDS actor started", self.transport_id);
 
-        while let Some(cmd) = self.cmd_rx.recv().await {
-            if matches!(cmd.handle(&mut self).await, ActorStep::Stop) {
+        while let Some(cmd) = self.cmd_rx.recv().await
+        {
+            if matches!(cmd.handle(&mut self).await, ActorStep::Stop)
+            {
                 break;
             }
         }
@@ -320,21 +346,24 @@ impl DdsActor {
         // Request shutdown for all per-topic reader tasks and wait for them to exit.
         let _ = self.shutdown_tx.send(true);
 
-        for handle in self.reader_tasks {
+        for handle in self.reader_tasks
+        {
             let _ = handle.await;
         }
 
         log_info!("{}: DDS actor stopped", self.transport_id);
     }
 
-    async fn handle_publish(&mut self, topic: String, env: Envelope) -> Result<()> {
+    async fn handle_publish(&mut self, topic: String, env: Envelope) -> Result<()>
+    {
         // ---
         let tid = self.transport_id.as_str();
 
         log_debug!("{tid}: handle_publish() called for topic {topic}");
 
         // Get or create DataWriter for this topic
-        if !self.writers.contains_key(&topic) {
+        if !self.writers.contains_key(&topic)
+        {
             self.create_writer(&topic).await?;
         }
 
@@ -360,7 +389,8 @@ impl DdsActor {
         Ok(())
     }
 
-    async fn create_writer(&mut self, topic: &str) -> Result<()> {
+    async fn create_writer(&mut self, topic: &str) -> Result<()>
+    {
         // ---
         let tid = self.transport_id.as_str();
 
@@ -418,7 +448,8 @@ impl DdsActor {
         Ok(())
     }
 
-    async fn handle_subscribe(&mut self, topic: &String) -> Result<()> {
+    async fn handle_subscribe(&mut self, topic: &String) -> Result<()>
+    {
         // ---
 
         log_debug!(
@@ -429,7 +460,8 @@ impl DdsActor {
         self.create_reader(topic).await
     }
 
-    async fn create_reader(&mut self, topic: &str) -> Result<()> {
+    async fn create_reader(&mut self, topic: &str) -> Result<()>
+    {
         // ---
         let tid = &self.transport_id;
 
@@ -490,7 +522,8 @@ impl DdsActor {
         Ok(())
     }
 
-    async fn handle_close(&mut self) {
+    async fn handle_close(&mut self)
+    {
         // ---
 
         log_debug!("{}: closing DDS transport", self.transport_id);
@@ -505,7 +538,8 @@ async fn run_topic_reader(
     reader: DataReaderAsync<DdsEnvelope>,
     subscribers: SubscriberMap,
     mut shutdown_rx: watch::Receiver<bool>,
-) {
+)
+{
     log_debug!("{transport_id}: starting reader task for topic {topic}");
 
     // Configure a status condition that triggers when new data is available on this reader.
@@ -528,7 +562,8 @@ async fn run_topic_reader(
         return;
     }
 
-    loop {
+    loop
+    {
         tokio::select! {
             _ = shutdown_rx.changed() => {
                 log_debug!("{transport_id}: reader task shutdown requested for topic {topic}");
@@ -570,9 +605,11 @@ async fn drain_reader(
     topic: &str,
     reader: &DataReaderAsync<DdsEnvelope>,
     subscribers: &SubscriberMap,
-) -> Result<()> {
+) -> Result<()>
+{
     // ---
-    loop {
+    loop
+    {
         let samples = match reader
             .take(
                 10,
@@ -584,12 +621,14 @@ async fn drain_reader(
         {
             Ok(samples) => samples,
 
-            Err(DdsError::NoData) => {
+            Err(DdsError::NoData) =>
+            {
                 // Normal drain completion
                 break;
             }
 
-            Err(e) => {
+            Err(e) =>
+            {
                 return Err(RpcError::Transport(format!(
                     "take error on topic {topic}: {e:?}"
                 )));
@@ -601,25 +640,30 @@ async fn drain_reader(
             samples.len(),
         );
 
-        for (i, sample) in samples.iter().enumerate() {
+        for (i, sample) in samples.iter().enumerate()
+        {
             log_debug!(
                 "{transport_id}: sample {i}: data.is_some()={}",
                 sample.data.is_some()
             );
 
-            if let Some(dds_env) = &sample.data {
+            if let Some(dds_env) = &sample.data
+            {
                 log_debug!(
                     "{transport_id}: DdsEnvelope key={}, data_len={}",
                     dds_env.topic,
                     dds_env.data.len()
                 );
 
-                match serde_json::from_slice::<Envelope>(&dds_env.data) {
-                    Ok(env) => {
+                match serde_json::from_slice::<Envelope>(&dds_env.data)
+                {
+                    Ok(env) =>
+                    {
                         log_info!("{transport_id}: successfully deserialized envelope");
                         handle_incoming(transport_id, topic, Arc::clone(subscribers), env).await;
                     }
-                    Err(e) => {
+                    Err(e) =>
+                    {
                         log_error!("{transport_id}: deserialization error: {e:?}",);
                     }
                 }
@@ -631,12 +675,8 @@ async fn drain_reader(
 }
 
 /// Fans out an incoming envelope to all local subscribers for the topic.
-async fn handle_incoming(
-    transport_id: &str,
-    topic: &str,
-    subscribers: SubscriberMap,
-    env: Envelope,
-) {
+async fn handle_incoming(transport_id: &str, topic: &str, subscribers: SubscriberMap, env: Envelope)
+{
     // ---
 
     let senders = {
@@ -644,7 +684,9 @@ async fn handle_incoming(
         map.get(topic).cloned()
     };
 
-    let Some(senders) = senders else {
+    let Some(senders) = senders
+    else
+    {
         // No subscribers for this topic
         return;
     };
@@ -655,13 +697,17 @@ async fn handle_incoming(
     // Collect only the surviving (live) subscribers.
     let mut survivors = Vec::with_capacity(original_len);
 
-    for tx in senders {
-        match tx.try_send(env.clone()) {
-            Ok(()) => {
+    for tx in senders
+    {
+        match tx.try_send(env.clone())
+        {
+            Ok(()) =>
+            {
                 // Subscriber is alive and accepted the message.
                 survivors.push(tx);
             }
-            Err(_) => {
+            Err(_) =>
+            {
                 // Channel is full or receiver was dropped; evict.
                 log_debug!(
                     "{}: evicted dead subscriber for topic {}",
@@ -673,7 +719,8 @@ async fn handle_incoming(
     }
 
     // Only update the map if something changed.
-    if survivors.len() != original_len {
+    if survivors.len() != original_len
+    {
         let mut map = subscribers.write().await;
         map.insert(topic.to_string(), survivors);
     }
@@ -684,7 +731,8 @@ async fn handle_incoming(
 /// - `Reliability::Reliable` - TCP-like delivery with retries (consistent with MQTT/AMQP)
 /// - `History::KeepLast(1)` - Only latest message (prevents correlation confusion)
 /// - `Durability::Volatile` - No persistence (ephemeral, point-to-point)
-fn build_rpc_writer_qos() -> DataWriterQos {
+fn build_rpc_writer_qos() -> DataWriterQos
+{
     // ---
 
     DataWriterQos {
@@ -703,7 +751,8 @@ fn build_rpc_writer_qos() -> DataWriterQos {
 }
 
 /// Builds QoS policies appropriate for RPC semantics for DataReader.
-fn build_rpc_reader_qos() -> DataReaderQos {
+fn build_rpc_reader_qos() -> DataReaderQos
+{
     // ---
 
     DataReaderQos {
@@ -722,14 +771,17 @@ fn build_rpc_reader_qos() -> DataReaderQos {
 }
 
 #[async_trait::async_trait]
-impl Transport for DustddsTransport {
+impl Transport for DustddsTransport
+{
     // ---
 
-    fn base(&self) -> &TransportBase {
+    fn base(&self) -> &TransportBase
+    {
         &self.base
     }
 
-    async fn publish(&self, env: Envelope) -> Result<()> {
+    async fn publish(&self, env: Envelope) -> Result<()>
+    {
         // ---
         let topic = env.address.0.to_string();
 
@@ -774,7 +826,8 @@ impl Transport for DustddsTransport {
         Ok(())
     }
 
-    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
+    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle>
+    {
         // ---
 
         let topic = sub.0.as_ref().to_string();
@@ -810,7 +863,8 @@ impl Transport for DustddsTransport {
         Ok(SubscriptionHandle { inbox: rx })
     }
 
-    async fn close(&self) -> Result<()> {
+    async fn close(&self) -> Result<()>
+    {
         // ---
 
         let (tx, rx) = oneshot::channel();
@@ -819,7 +873,8 @@ impl Transport for DustddsTransport {
         let _ = rx.await;
 
         let mut tasks = self.tasks.write().await;
-        while let Some(handle) = tasks.pop() {
+        while let Some(handle) = tasks.pop()
+        {
             let _ = handle.await;
         }
 
@@ -837,13 +892,17 @@ impl Transport for DustddsTransport {
 /// # Errors
 ///
 /// Returns an error if `DomainParticipant` creation fails.
-pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
+pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr>
+{
     // ---
 
     // Parse domain ID from URI (format: dds:45)
-    let uri_opt = if config.uri.is_empty() {
+    let uri_opt = if config.uri.is_empty()
+    {
         None
-    } else {
+    }
+    else
+    {
         Some(config.uri.as_str())
     };
     let domain_id = parse_domain_id(uri_opt)?;
@@ -877,10 +936,13 @@ pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
 /// Expected format: `dds:<domain_id>` (e.g., "dds:0", "dds:45")
 /// Returns `Ok(0)` (default domain) when `uri` is `None`.
 /// Returns `RpcError::Transport` if the URI format is invalid or domain ID cannot be parsed.
-fn parse_domain_id(uri: Option<&str>) -> Result<u16> {
+fn parse_domain_id(uri: Option<&str>) -> Result<u16>
+{
     // ---
 
-    let Some(uri) = uri else {
+    let Some(uri) = uri
+    else
+    {
         return Ok(0); // Default domain when not specified
     };
 
@@ -912,7 +974,8 @@ async fn wait_for_matched_reader(
     topic: &str,
     writer: &DataWriterAsync<DdsEnvelope>,
     timeout_secs: u64,
-) -> Result<()> {
+) -> Result<()>
+{
     // ---
 
     // Check FIRST - avoid race condition
@@ -920,7 +983,8 @@ async fn wait_for_matched_reader(
         RpcError::Transport(format!("get_publication_matched_status failed: {e:?}"))
     })?;
 
-    if status.current_count > 0 {
+    if status.current_count > 0
+    {
         return Ok(()); // Already matched, no need to wait
     }
 
@@ -956,7 +1020,8 @@ async fn wait_for_matched_reader(
         RpcError::Transport(format!("get_publication_matched_status failed: {e:?}"))
     })?;
 
-    if status.current_count == 0 {
+    if status.current_count == 0
+    {
         return Err(RpcError::Transport(format!(
             "{tid}: no matched readers for topic {topic}"
         )));
@@ -970,12 +1035,14 @@ async fn wait_for_matched_reader(
 }
 
 #[cfg(test)]
-mod tests {
+mod tests
+{
     // ---
     use super::*;
 
     #[test]
-    fn test_dds_envelope_roundtrip() {
+    fn test_dds_envelope_roundtrip()
+    {
         // --
         let env = Envelope::request(
             crate::Address::from("hello"),
@@ -991,32 +1058,37 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_domain_id_none() {
+    fn test_parse_domain_id_none()
+    {
         assert_eq!(parse_domain_id(None).unwrap(), 0);
     }
 
     #[test]
-    fn test_parse_domain_id_valid() {
+    fn test_parse_domain_id_valid()
+    {
         assert_eq!(parse_domain_id(Some("dds:0")).unwrap(), 0);
         assert_eq!(parse_domain_id(Some("dds:42")).unwrap(), 42);
         assert_eq!(parse_domain_id(Some("dds:65535")).unwrap(), 65535);
     }
 
     #[test]
-    fn test_parse_domain_id_missing_prefix() {
+    fn test_parse_domain_id_missing_prefix()
+    {
         let result = parse_domain_id(Some("42"));
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RpcError::Transport(_)));
     }
 
     #[test]
-    fn test_parse_domain_id_invalid_number() {
+    fn test_parse_domain_id_invalid_number()
+    {
         let result = parse_domain_id(Some("dds:not_a_number"));
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_parse_domain_id_overflow() {
+    fn test_parse_domain_id_overflow()
+    {
         let result = parse_domain_id(Some("dds:99999"));
         assert!(result.is_err());
     }

@@ -9,7 +9,8 @@ pub type Result<T> = std::result::Result<T, RpcError>;
 /// implementations are responsible for mapping their internal failures into
 /// one of these variants.
 #[derive(Debug, Error)]
-pub enum RpcError {
+pub enum RpcError
+{
     /// A request timed out while waiting for a response.
     ///
     /// Timeouts are currently introduced explicitly by higher-level logic

@@ -56,6 +56,8 @@
 //! This module intentionally avoids exposing MQTT-specific concepts (QoS,
 //! retain flags, session state) outside the transport boundary.
 
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
 use rumqttc::{
     //
     AsyncClient,
@@ -67,19 +69,12 @@ use rumqttc::{
     Publish,
     QoS,
 };
-
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
-
-use tokio::sync::{mpsc, oneshot, RwLock};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{RwLock, mpsc, oneshot},
+    task::JoinHandle,
+};
 
 use crate::{
-    //
-    log_debug,
-    log_error,
-    log_info,
     Envelope,
     Result,
     RpcError,
@@ -89,6 +84,10 @@ use crate::{
     TransportBase,
     TransportConfig,
     TransportPtr,
+    //
+    log_debug,
+    log_error,
+    log_info,
 };
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
@@ -108,52 +107,64 @@ type PendingSubscribe = Arc<RwLock<Option<(String, oneshot::Sender<Result<Ack>>)
 // Actor commands
 //
 
-enum Cmd {
+enum Cmd
+{
     //
-    Publish {
+    Publish
+    {
         env: Envelope,
         resp: oneshot::Sender<Result<()>>,
     },
-    Subscribe {
+    Subscribe
+    {
         topic: String,
         resp: oneshot::Sender<Result<Ack>>,
     },
-    Close {
-        resp: oneshot::Sender<Result<()>>,
+    Close
+    {
+        resp: oneshot::Sender<Result<()>>
     },
 }
 
 /// Actor Ack
 #[derive(PartialEq)]
-pub enum Ack {
+pub enum Ack
+{
     Ok,
     Retry,
 }
 
-enum ActorStep {
+enum ActorStep
+{
     //
     Continue,
     Stop,
 }
 
-impl Cmd {
+impl Cmd
+{
     // ---
 
     /// Dispatches an actor command to the correct handler on the actor
-    async fn handle(self, actor: &mut MqttActor) -> ActorStep {
+    async fn handle(self, actor: &mut MqttActor) -> ActorStep
+    {
         // ---
 
-        match self {
-            Cmd::Publish { env, resp } => {
+        match self
+        {
+            Cmd::Publish { env, resp } =>
+            {
                 let result = actor.handle_publish(env).await;
                 let _ = resp.send(result);
                 ActorStep::Continue
             }
-            Cmd::Subscribe { topic, resp } => {
+            Cmd::Subscribe { topic, resp } =>
+            {
                 actor.handle_subscribe(topic, resp).await;
                 ActorStep::Continue
             }
-            Cmd::Close { resp } => {
+            Cmd::Close { resp } =>
+            {
                 actor.handle_close().await;
                 let _ = resp.send(Ok(()));
                 ActorStep::Stop
@@ -168,7 +179,8 @@ impl Cmd {
 /// non-durable message delivery consistent with memory transport semantics.
 ///
 /// Connection to the broker happens lazily when the EventLoop begins polling.
-pub struct RumqttcTransport {
+pub struct RumqttcTransport
+{
     // ---
     base: TransportBase,
     cmd_tx: mpsc::Sender<Cmd>,
@@ -176,14 +188,16 @@ pub struct RumqttcTransport {
     tasks: TaskList,
 }
 
-impl RumqttcTransport {
+impl RumqttcTransport
+{
     // ---
 
     /// Creates a new rumqttc transport with the given client and event loop.
     ///
     /// This function is infallible - the actual broker connection happens
     /// lazily when the EventLoop starts polling in the background actor.
-    pub fn create(base: TransportBase, client: AsyncClient, event_loop: EventLoop) -> TransportPtr {
+    pub fn create(base: TransportBase, client: AsyncClient, event_loop: EventLoop) -> TransportPtr
+    {
         // ---
 
         let transport_id = base.transport_id.clone();
@@ -219,7 +233,8 @@ impl RumqttcTransport {
     }
 }
 
-struct MqttActor {
+struct MqttActor
+{
     // ---
     transport_id: String, // for logging only
     client: AsyncClient,
@@ -230,13 +245,16 @@ struct MqttActor {
     reconnect: bool,
 }
 
-impl MqttActor {
+impl MqttActor
+{
     // ---
 
-    async fn run(mut self) {
+    async fn run(mut self)
+    {
         // ---
 
-        loop {
+        loop
+        {
             tokio::select! {
                 cmd = self.cmd_rx.recv() => {
                     match cmd {
@@ -303,14 +321,17 @@ impl MqttActor {
     /// Publishes an envelope to the broker.
     ///
     /// Serializes the envelope as JSON and publishes with QoS 0 (at most once).
-    async fn handle_publish(&mut self, env: Envelope) -> Result<()> {
+    async fn handle_publish(&mut self, env: Envelope) -> Result<()>
+    {
         // ---
 
         let topic = env.address.0.as_ref();
 
-        let payload = match serde_json::to_vec(&env) {
+        let payload = match serde_json::to_vec(&env)
+        {
             Ok(p) => p,
-            Err(err) => {
+            Err(err) =>
+            {
                 let msg = format!(
                     "{}: failed to serialize publish payload: {err}",
                     self.transport_id
@@ -341,14 +362,16 @@ impl MqttActor {
     ///
     /// Subscriptions are serialized (one at a time) to maintain correlation with
     /// SUBACK packets, which contain only packet IDs (not topic names).
-    async fn handle_subscribe(&mut self, topic: String, resp: oneshot::Sender<Result<Ack>>) {
+    async fn handle_subscribe(&mut self, topic: String, resp: oneshot::Sender<Result<Ack>>)
+    {
         // ---
         let transport_id = &self.transport_id.as_str();
 
         // Store the pending subscribe for SUBACK correlation
         {
             let mut pending = self.pending_subscribe.write().await;
-            if pending.is_some() {
+            if pending.is_some()
+            {
                 log_debug!("{transport_id}: handle_subscribe: subscribe already pending, retry...",);
                 // Another subscribe is in flight; tell caller to retry after a short delay
                 let _ = resp.send(Ok(Ack::Retry));
@@ -358,9 +381,11 @@ impl MqttActor {
         }
 
         // Send subscribe request to broker
-        if let Err(err) = self.client.subscribe(&topic, QoS::AtMostOnce).await {
+        if let Err(err) = self.client.subscribe(&topic, QoS::AtMostOnce).await
+        {
             let mut pending = self.pending_subscribe.write().await;
-            if let Some((topic, responder)) = pending.take() {
+            if let Some((topic, responder)) = pending.take()
+            {
                 let msg =
                     format!("{transport_id}: failed to send subscribe for topic {topic}: {err}");
                 log_error!("{msg}");
@@ -379,11 +404,14 @@ impl MqttActor {
         pending_subscribe: PendingSubscribe,
         transport_id: &str,
         suback: rumqttc::SubAck,
-    ) {
+    )
+    {
         // ---
 
         let mut pending = pending_subscribe.write().await;
-        let Some((topic, responder)) = pending.take() else {
+        let Some((topic, responder)) = pending.take()
+        else
+        {
             // This is a reconnect re-subscribe SUBACK — ignore
             log_debug!("{transport_id}: SUBACK received for reconnect re-subscribe");
             return;
@@ -396,10 +424,13 @@ impl MqttActor {
             .iter()
             .all(|code| !matches!(code, rumqttc::SubscribeReasonCode::Failure));
 
-        if success {
+        if success
+        {
             log_info!("{transport_id}: successfully subscribed to topic {topic}");
             let _ = responder.send(Ok(Ack::Ok));
-        } else {
+        }
+        else
+        {
             let msg = format!(
                 "{transport_id}: subscription failed for topic {topic}: {:?}",
                 suback.return_codes
@@ -414,12 +445,16 @@ impl MqttActor {
     /// Logs connection success at info level or failure at error level.
     /// Connection failures are always visible (via eprintln if logging disabled)
     /// since they are critical for debugging.
-    fn handle_connack(&self, connack: rumqttc::ConnAck) {
+    fn handle_connack(&self, connack: rumqttc::ConnAck)
+    {
         // ---
 
-        if connack.code == ConnectReturnCode::Success {
+        if connack.code == ConnectReturnCode::Success
+        {
             log_info!("{}: connected to broker", self.transport_id);
-        } else {
+        }
+        else
+        {
             log_error!(
                 "{}: connection failed: {:?}",
                 self.transport_id,
@@ -429,12 +464,14 @@ impl MqttActor {
     }
 
     /// Disconnects from the MQTT broker.
-    async fn handle_close(&mut self) {
+    async fn handle_close(&mut self)
+    {
         // ---
 
         log_debug!("{}: disconnecting mqtt client", self.transport_id);
 
-        if let Err(_err) = self.client.disconnect().await {
+        if let Err(_err) = self.client.disconnect().await
+        {
             log_debug!("{}: mqtt disconnect failed: {_err}", self.transport_id);
         }
     }
@@ -444,15 +481,18 @@ impl MqttActor {
     /// Deserializes the envelope, looks up matching subscribers, and delivers the
     /// message to all live subscribers. Dead or slow subscribers are automatically
     /// evicted during delivery.
-    async fn handle_incoming(_transport_id: String, subscribers: SubscriberMap, publish: Publish) {
+    async fn handle_incoming(_transport_id: String, subscribers: SubscriberMap, publish: Publish)
+    {
         // ---
 
         let topic = publish.topic.clone();
         let payload = publish.payload.clone();
 
-        let env = match serde_json::from_slice::<Envelope>(&payload) {
+        let env = match serde_json::from_slice::<Envelope>(&payload)
+        {
             Ok(env) => env,
-            Err(_err) => {
+            Err(_err) =>
+            {
                 log_debug!(
                     "{}: invalid envelope on topic {topic}: {_err}",
                     _transport_id
@@ -466,7 +506,9 @@ impl MqttActor {
             map.get(&topic).cloned()
         };
 
-        let Some(senders) = senders else {
+        let Some(senders) = senders
+        else
+        {
             // No subscribers for this topic
             return;
         };
@@ -477,27 +519,33 @@ impl MqttActor {
         // Collect only the surviving (live) subscribers.
         let mut survivors = Vec::with_capacity(original_len);
 
-        for tx in senders {
-            match tx.try_send(env.clone()) {
-                Ok(()) => {
+        for tx in senders
+        {
+            match tx.try_send(env.clone())
+            {
+                Ok(()) =>
+                {
                     // Subscriber is alive and accepted the message.
                     survivors.push(tx);
                 }
-                Err(_) => {
+                Err(_) =>
+                {
                     // Channel is full or receiver was dropped; evict.
                 }
             }
         }
 
         // Only update the map if something changed.
-        if survivors.len() != original_len {
+        if survivors.len() != original_len
+        {
             let mut map = subscribers.write().await;
             map.insert(topic, survivors);
         }
     }
 } // MqttActor
 
-fn is_disconnect(err: &rumqttc::ConnectionError) -> bool {
+fn is_disconnect(err: &rumqttc::ConnectionError) -> bool
+{
     // ---
     matches!(
         err,
@@ -506,14 +554,17 @@ fn is_disconnect(err: &rumqttc::ConnectionError) -> bool {
 }
 
 #[async_trait::async_trait]
-impl Transport for RumqttcTransport {
+impl Transport for RumqttcTransport
+{
     // ---
 
-    fn base(&self) -> &TransportBase {
+    fn base(&self) -> &TransportBase
+    {
         &self.base
     }
 
-    async fn publish(&self, env: Envelope) -> Result<()> {
+    async fn publish(&self, env: Envelope) -> Result<()>
+    {
         // ---
 
         let (tx, rx) = oneshot::channel();
@@ -532,7 +583,8 @@ impl Transport for RumqttcTransport {
         })?
     }
 
-    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
+    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle>
+    {
         // ---
 
         let topic = sub.0.as_ref().to_string();
@@ -543,7 +595,8 @@ impl Transport for RumqttcTransport {
             map.entry(topic.clone()).or_default().push(tx);
         }
 
-        loop {
+        loop
+        {
             let (resp_tx, resp_rx) = oneshot::channel();
 
             self.cmd_tx
@@ -560,10 +613,12 @@ impl Transport for RumqttcTransport {
             match resp_rx.await.map_err(|e| {
                 let msg = format!("actor resp_rx channel read failed:{e}");
                 RpcError::Transport(msg)
-            })? {
+            })?
+            {
                 // Another subscribe is in flight; yield and retry until the
                 // broker confirms the current one via SUBACK
-                Ok(Ack::Retry) => {
+                Ok(Ack::Retry) =>
+                {
                     let delay_ms = 200;
                     log_debug!(
                         "{}: subscribe: Got Ack::Retry, retrying in {delay_ms}ms...",
@@ -580,7 +635,8 @@ impl Transport for RumqttcTransport {
         Ok(SubscriptionHandle { inbox: rx })
     }
 
-    async fn close(&self) -> Result<()> {
+    async fn close(&self) -> Result<()>
+    {
         // ---
 
         let (tx, rx) = oneshot::channel();
@@ -589,7 +645,8 @@ impl Transport for RumqttcTransport {
         let _ = rx.await;
 
         let mut tasks = self.tasks.write().await;
-        while let Some(handle) = tasks.pop() {
+        while let Some(handle) = tasks.pop()
+        {
             let _ = handle.await;
         }
 
@@ -609,7 +666,8 @@ impl Transport for RumqttcTransport {
 ///
 /// The actual connection to the broker happens lazily when the EventLoop
 /// starts polling in the background actor task.
-pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
+pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr>
+{
     // ---
 
     let (client, event_loop) = create_mqtt_client(&config)?;
@@ -624,11 +682,13 @@ pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
 ///
 /// This function is fallible only due to URL parsing. The `AsyncClient::new()`
 /// call itself is infallible - connection happens lazily on first poll.
-fn create_mqtt_client(config: &TransportConfig) -> Result<(AsyncClient, EventLoop)> {
+fn create_mqtt_client(config: &TransportConfig) -> Result<(AsyncClient, EventLoop)>
+{
     // ---
 
     let transport_uri = &config.uri;
-    if transport_uri.is_empty() {
+    if transport_uri.is_empty()
+    {
         return Err(RpcError::Transport(
             "MQTT transport requires URI".to_string(),
         ));
@@ -641,7 +701,8 @@ fn create_mqtt_client(config: &TransportConfig) -> Result<(AsyncClient, EventLoo
         .or_else(|| transport_uri.strip_prefix("tcp://"))
         .unwrap_or(transport_uri);
 
-    let (host, port) = match url.split_once(':') {
+    let (host, port) = match url.split_once(':')
+    {
         Some((h, p)) => (
             h,
             p.parse().map_err(|err| {
@@ -655,7 +716,8 @@ fn create_mqtt_client(config: &TransportConfig) -> Result<(AsyncClient, EventLoo
 
     let mut mqtt_options = MqttOptions::new(client_id, host, port);
 
-    if let Some(keep_alive_secs) = config.keep_alive_secs {
+    if let Some(keep_alive_secs) = config.keep_alive_secs
+    {
         mqtt_options.set_keep_alive(std::time::Duration::from_secs(keep_alive_secs as u64));
     }
 
