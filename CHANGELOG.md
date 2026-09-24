@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 This project follows a design-first, architecture-driven development model.
 Early versions may include intentional refactors as semantics are clarified.
 
+## [Unreleased]
+
+### Dependencies
+
+- Refreshed the lockfile to the latest compatible releases, including `lapin`
+  4.10.0 -> 4.12.0, `redis` 1.6.0 -> 1.7.0, `rustls` 0.23.43 -> 0.23.45,
+  and `uuid` 1.25.0 -> 1.26.1.
+
+### Changed
+
+- Toolchain bumped `1.94.1` -> `1.98.1`.
+
+---
+
 ## [0.9.5] - 2026-08-25
 
 ### Dependencies
