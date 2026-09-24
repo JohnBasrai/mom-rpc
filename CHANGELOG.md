@@ -16,6 +16,8 @@ Early versions may include intentional refactors as semantics are clarified.
 ### Changed
 
 - Toolchain bumped `1.94.1` -> `1.98.1`.
+- Adopted the nightly-backed `cargo xfmt` workflow and project formatting
+  configuration.
 
 ---
 

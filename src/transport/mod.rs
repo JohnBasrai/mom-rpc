@@ -21,17 +21,15 @@ mod mqtt;
 mod redis;
 
 // Memory transport - process-global factory is internal; users use TransportBuilder
-pub(crate) use memory::create_memory_transport;
-
-// Memory transport testing utilities - pub for integration tests
-// WARNING: These APIs are reserved for mom-rpc's own integration tests and may
-// change without notice. Use TransportBuilder for production code.
-pub use memory::create_memory_transport_with_hub;
-pub use memory::MemoryHub;
-
 // Protocol transports - always exported via Null Object pattern.
 // Disabled transports return RpcError::Transport at runtime.
 pub use amqp::create_lapin_transport;
 pub use dds::create_dust_dds_transport;
+pub use memory::MemoryHub;
+pub(crate) use memory::create_memory_transport;
+// Memory transport testing utilities - pub for integration tests
+// WARNING: These APIs are reserved for mom-rpc's own integration tests and may
+// change without notice. Use TransportBuilder for production code.
+pub use memory::create_memory_transport_with_hub;
 pub use mqtt::create_rumqttc_transport;
 pub use redis::create_redis_transport;

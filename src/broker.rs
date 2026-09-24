@@ -3,6 +3,17 @@
 //! Provides a single type that can act as client, server, or both (full-duplex)
 //! based on the configured mode.
 
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{Arc, Mutex, MutexGuard},
+    time::Duration,
+};
+
+use bytes::Bytes;
+use serde::{Serialize, de::DeserializeOwned};
+use tokio::{sync::oneshot, task::JoinHandle};
+
 use crate::{
     // ---
     Address,
@@ -14,15 +25,6 @@ use crate::{
     Subscription,
     TransportPtr,
 };
-use bytes::Bytes;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::collections::HashMap;
-use std::future::Future;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 
 /// Map of pending client requests awaiting responses.
 ///
@@ -40,11 +42,13 @@ type HandlerRegistry = Arc<Mutex<HashMap<String, Arc<dyn HandlerFn>>>>;
 /// - **Client mode**: Can call `request_to()`, cannot `register_rpc_handler()` or `spawn()`
 /// - **Server mode**: Can `register_rpc_handler()` and `spawn()`, cannot call `request_to()`
 /// - **Full-duplex mode**: Can use all methods
-pub struct RpcBroker {
+pub struct RpcBroker
+{
     inner: Arc<Inner>,
 }
 
-struct Inner {
+struct Inner
+{
     transport: TransportPtr,
     node_id: String,
     mode: BrokerMode,
@@ -65,7 +69,8 @@ struct Inner {
 }
 
 // Handler trait for type-erased async functions
-trait HandlerFn: Send + Sync {
+trait HandlerFn: Send + Sync
+{
     fn call(&self, payload: Bytes) -> BoxFuture<'static, Result<Bytes>>;
 }
 
@@ -90,9 +95,11 @@ where
     TReq: DeserializeOwned + Send + 'static,
     TResp: Serialize + Send + 'static,
 {
-    fn call(&self, payload: Bytes) -> BoxFuture<'static, Result<Bytes>> {
+    fn call(&self, payload: Bytes) -> BoxFuture<'static, Result<Bytes>>
+    {
         // Deserialize request
-        let req: TReq = match serde_json::from_slice(&payload) {
+        let req: TReq = match serde_json::from_slice(&payload)
+        {
             Ok(r) => r,
             Err(e) => return Box::pin(async move { Err(e.into()) }),
         };
@@ -109,14 +116,17 @@ where
 }
 
 /// Acquire mutex guard, ignoring poisoning
-fn lock_ignore_poison<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    match m.lock() {
+fn lock_ignore_poison<T>(m: &Mutex<T>) -> MutexGuard<'_, T>
+{
+    match m.lock()
+    {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     }
 }
 
-impl RpcBroker {
+impl RpcBroker
+{
     /// Create a new RPC broker (internal use by RpcBrokerBuilder).
     pub(crate) fn new(
         transport: TransportPtr,
@@ -124,13 +134,16 @@ impl RpcBroker {
         mode: BrokerMode,
         retry_config: Option<RetryConfig>,
         request_total_timeout: Duration,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    {
         // Initialize based on mode
         let pending: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
         let handlers: HandlerRegistry = Arc::new(Mutex::new(HashMap::new()));
 
-        let (rx_task, server_rx_task) = match mode {
-            BrokerMode::Client => {
+        let (rx_task, server_rx_task) = match mode
+        {
+            BrokerMode::Client =>
+            {
                 // Client mode: start response receiver task
                 let rx_task = Some(Self::start_client_task(
                     transport.clone(),
@@ -139,7 +152,8 @@ impl RpcBroker {
                 ));
                 (rx_task, None)
             }
-            BrokerMode::Server => {
+            BrokerMode::Server =>
+            {
                 // Server mode: start request receiver task
                 let server_rx_task = Some(Self::start_server_task(
                     transport.clone(),
@@ -148,7 +162,8 @@ impl RpcBroker {
                 ));
                 (None, server_rx_task)
             }
-            BrokerMode::FullDuplex => {
+            BrokerMode::FullDuplex =>
+            {
                 // Full-duplex: start both receiver tasks
                 let rx_task = Some(Self::start_client_task(
                     transport.clone(),
@@ -188,12 +203,15 @@ impl RpcBroker {
         transport: TransportPtr,
         node_id: String,
         pending: Arc<Mutex<HashMap<String, oneshot::Sender<Bytes>>>>,
-    ) -> JoinHandle<()> {
+    ) -> JoinHandle<()>
+    {
         tokio::spawn(async move {
             let subscription = Subscription::from(format!("responses/{node_id}"));
-            let mut handle = match transport.subscribe(subscription).await {
+            let mut handle = match transport.subscribe(subscription).await
+            {
                 Ok(h) => h,
-                Err(e) => {
+                Err(e) =>
+                {
                     crate::log_error!("failed to subscribe to responses: {e}");
                     return;
                 }
@@ -201,10 +219,13 @@ impl RpcBroker {
 
             crate::log_debug!("client task started for responses/{node_id}");
 
-            while let Some(envelope) = handle.inbox.recv().await {
-                let correlation_id = match envelope.correlation_id {
+            while let Some(envelope) = handle.inbox.recv().await
+            {
+                let correlation_id = match envelope.correlation_id
+                {
                     Some(ref id) => id.as_ref(),
-                    None => {
+                    None =>
+                    {
                         crate::log_warn!("response missing correlation_id");
                         continue;
                     }
@@ -215,9 +236,12 @@ impl RpcBroker {
                     pending.remove(correlation_id)
                 };
 
-                if let Some(tx) = tx {
+                if let Some(tx) = tx
+                {
                     let _ = tx.send(envelope.payload);
-                } else {
+                }
+                else
+                {
                     crate::log_debug!("no pending request for correlation_id: {correlation_id}");
                 }
             }
@@ -231,12 +255,15 @@ impl RpcBroker {
         transport: TransportPtr,
         node_id: String,
         handlers: Arc<Mutex<HashMap<String, Arc<dyn HandlerFn>>>>,
-    ) -> JoinHandle<()> {
+    ) -> JoinHandle<()>
+    {
         tokio::spawn(async move {
             let subscription = Subscription::from(format!("requests/{node_id}"));
-            let mut handle = match transport.subscribe(subscription).await {
+            let mut handle = match transport.subscribe(subscription).await
+            {
                 Ok(h) => h,
-                Err(e) => {
+                Err(e) =>
+                {
                     crate::log_error!("failed to subscribe to requests: {e}");
                     return;
                 }
@@ -244,26 +271,33 @@ impl RpcBroker {
 
             crate::log_debug!("server task started for requests/{node_id}");
 
-            while let Some(envelope) = handle.inbox.recv().await {
-                let method = match envelope.method {
+            while let Some(envelope) = handle.inbox.recv().await
+            {
+                let method = match envelope.method
+                {
                     Some(ref m) => m.as_ref(),
-                    None => {
+                    None =>
+                    {
                         crate::log_warn!("request missing method");
                         continue;
                     }
                 };
 
-                let reply_to = match envelope.reply_to {
+                let reply_to = match envelope.reply_to
+                {
                     Some(ref addr) => addr.clone(),
-                    None => {
+                    None =>
+                    {
                         crate::log_warn!("request missing reply_to");
                         continue;
                     }
                 };
 
-                let correlation_id = match envelope.correlation_id {
+                let correlation_id = match envelope.correlation_id
+                {
                     Some(ref id) => id.clone(),
-                    None => {
+                    None =>
+                    {
                         crate::log_warn!("request missing correlation_id");
                         continue;
                     }
@@ -275,9 +309,11 @@ impl RpcBroker {
                     handlers.get(method).cloned()
                 };
 
-                let handler = match handler {
+                let handler = match handler
+                {
                     Some(h) => h,
-                    None => {
+                    None =>
+                    {
                         crate::log_warn!("no handler for method: {method}");
                         // Could send error response here
                         continue;
@@ -289,9 +325,11 @@ impl RpcBroker {
                 tokio::spawn(async move {
                     let result = handler.call(envelope.payload).await;
 
-                    let response_payload = match result {
+                    let response_payload = match result
+                    {
                         Ok(bytes) => bytes,
-                        Err(e) => {
+                        Err(e) =>
+                        {
                             crate::log_error!("handler error: {e}");
                             return;
                         }
@@ -304,7 +342,8 @@ impl RpcBroker {
                         Arc::from("application/json"),
                     );
 
-                    if let Err(e) = transport_clone.publish(response_env).await {
+                    if let Err(e) = transport_clone.publish(response_env).await
+                    {
                         crate::log_error!("failed to publish response: {e}");
                     }
                 });
@@ -365,11 +404,14 @@ impl RpcBroker {
         TResp: DeserializeOwned,
     {
         // Validate mode
-        match self.inner.mode {
-            BrokerMode::Client | BrokerMode::FullDuplex => {
+        match self.inner.mode
+        {
+            BrokerMode::Client | BrokerMode::FullDuplex =>
+            {
                 // Allowed - proceed
             }
-            BrokerMode::Server => {
+            BrokerMode::Server =>
+            {
                 return Err(RpcError::InvalidMode(
                     "request_to() not allowed in Server mode".into(),
                 ));
@@ -417,9 +459,11 @@ impl RpcBroker {
         method: &str,
         req_bytes: Bytes,
         timeout: Duration,
-    ) -> Result<Bytes> {
-        use crate::CorrelationId;
+    ) -> Result<Bytes>
+    {
         use tokio::time;
+
+        use crate::CorrelationId;
 
         let correlation_id = CorrelationId::generate();
         let correlation_id_str = correlation_id.to_string();
@@ -449,13 +493,16 @@ impl RpcBroker {
         let response = time::timeout(timeout, rx)
             .await
             .map_err(|_| {
-                if has_retry {
+                if has_retry
+                {
                     // With retry: return retryable error to trigger retry
                     crate::log_info!("Got timeout retry...");
                     RpcError::TransportRetryable(
                         "request timeout waiting for response, will retry".into(),
                     )
-                } else {
+                }
+                else
+                {
                     // Without retry: return terminal timeout error
                     RpcError::Timeout
                 }
@@ -483,11 +530,14 @@ impl RpcBroker {
         Fut: Future<Output = Result<TResp>> + Send + 'static,
     {
         // Validate mode
-        match self.inner.mode {
-            BrokerMode::Server | BrokerMode::FullDuplex => {
+        match self.inner.mode
+        {
+            BrokerMode::Server | BrokerMode::FullDuplex =>
+            {
                 // Allowed - proceed
             }
-            BrokerMode::Client => {
+            BrokerMode::Client =>
+            {
                 return Err(RpcError::InvalidMode(
                     "register_rpc_handler() not allowed in Client mode".into(),
                 ));
@@ -510,13 +560,17 @@ impl RpcBroker {
     /// # Errors
     ///
     /// Returns `RpcError::InvalidMode` if called in Client mode.
-    pub fn spawn(self) -> Result<JoinHandle<()>> {
+    pub fn spawn(self) -> Result<JoinHandle<()>>
+    {
         // Validate mode
-        match self.inner.mode {
-            BrokerMode::Server | BrokerMode::FullDuplex => {
+        match self.inner.mode
+        {
+            BrokerMode::Server | BrokerMode::FullDuplex =>
+            {
                 // Allowed - proceed
             }
-            BrokerMode::Client => {
+            BrokerMode::Client =>
+            {
                 return Err(RpcError::InvalidMode(
                     "spawn() not allowed in Client mode".into(),
                 ));
@@ -536,13 +590,17 @@ impl RpcBroker {
     /// # Errors
     ///
     /// Returns `RpcError::InvalidMode` if called in Client mode.
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()>
+    {
         // Validate mode
-        match self.inner.mode {
-            BrokerMode::Server | BrokerMode::FullDuplex => {
+        match self.inner.mode
+        {
+            BrokerMode::Server | BrokerMode::FullDuplex =>
+            {
                 // Allowed - proceed
             }
-            BrokerMode::Client => {
+            BrokerMode::Client =>
+            {
                 return Err(RpcError::InvalidMode(
                     "run() not allowed in Client mode".into(),
                 ));
@@ -551,18 +609,21 @@ impl RpcBroker {
 
         // Wait for shutdown signal
         let shutdown_rx = lock_ignore_poison(&self.inner.shutdown_rx).take();
-        if let Some(rx) = shutdown_rx {
+        if let Some(rx) = shutdown_rx
+        {
             let _ = rx.await;
         }
         Ok(())
     }
 
     /// Shutdown the broker.
-    pub async fn shutdown(&self) {
+    pub async fn shutdown(&self)
+    {
         // Send shutdown signal
         {
             let mut tx_guard = lock_ignore_poison(&self.inner.shutdown_tx);
-            if let Some(tx) = tx_guard.take() {
+            if let Some(tx) = tx_guard.take()
+            {
                 let _ = tx.send(());
             }
         }
@@ -572,8 +633,10 @@ impl RpcBroker {
     }
 }
 
-impl Clone for RpcBroker {
-    fn clone(&self) -> Self {
+impl Clone for RpcBroker
+{
+    fn clone(&self) -> Self
+    {
         Self {
             inner: self.inner.clone(),
         }

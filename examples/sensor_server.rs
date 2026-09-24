@@ -14,10 +14,11 @@ mod common;
 
 use common::{ReadHumidity, ReadPressure, ReadTemperature, SensorReading, TemperatureUnit};
 use mom_rpc::{Result, RpcBrokerBuilder, TransportBuilder};
-use tracing_subscriber::{fmt as tracing_format, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt as tracing_format};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<()>
+{
     // ---
     tracing_format()
         .with_env_filter(EnvFilter::from_default_env())
@@ -41,7 +42,8 @@ async fn main() -> Result<()> {
     server.register_rpc_handler("read_temperature", |req: ReadTemperature| async move {
         // ---
         let celsius = 21.5_f32;
-        let (value, unit) = match req.unit {
+        let (value, unit) = match req.unit
+        {
             TemperatureUnit::Celsius => (celsius, "C"),
             TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "F"),
         };
@@ -90,7 +92,8 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn current_time_ms() -> u64 {
+fn current_time_ms() -> u64
+{
     // ---
     use std::time::{SystemTime, UNIX_EPOCH};
 

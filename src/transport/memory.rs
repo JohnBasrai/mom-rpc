@@ -24,18 +24,15 @@
 //! or delivery guarantees of any specific broker. It exists to provide a clear,
 //! deterministic baseline against which higher-level behavior can be validated.
 
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
 
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 #[allow(unused_imports)]
 use crate::{
-    // ---
-    log_debug,
-    log_error,
-    log_info,
-    log_warn,
     Address,
     Envelope,
     Result,
@@ -45,6 +42,11 @@ use crate::{
     TransportBase,
     TransportConfig,
     TransportPtr,
+    // ---
+    log_debug,
+    log_error,
+    log_info,
+    log_warn,
 };
 
 /// Shared message bus for the in-memory transport.
@@ -85,34 +87,44 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
-pub struct MemoryHub {
+pub struct MemoryHub
+{
     // ---
     subscriptions: RwLock<HashMap<Subscription, Vec<mpsc::Sender<Envelope>>>>,
 }
 
-impl MemoryHub {
+impl MemoryHub
+{
     /// Create a new, empty hub.
-    pub fn new() -> Arc<Self> {
+    pub fn new() -> Arc<Self>
+    {
         // ---
         Arc::new(Self {
             subscriptions: RwLock::new(HashMap::new()),
         })
     }
 
-    async fn publish(&self, _transport_id: &str, env: Envelope) -> Result<()> {
+    async fn publish(&self, _transport_id: &str, env: Envelope) -> Result<()>
+    {
         // ---
         let subs = self.subscriptions.read().await;
 
-        for (sub, senders) in subs.iter() {
-            if sub.0 == env.address.0 {
+        for (sub, senders) in subs.iter()
+        {
+            if sub.0 == env.address.0
+            {
                 log_debug!("{_transport_id}: publish to {sub:?}");
 
-                for sender in senders {
+                for sender in senders
+                {
                     // Ignore send failures; a closed channel indicates
                     // a dropped SubscriptionHandle.
-                    match sender.send(env.clone()).await {
-                        Ok(_) => {}
-                        Err(_err) => {
+                    match sender.send(env.clone()).await
+                    {
+                        Ok(_) =>
+                        {}
+                        Err(_err) =>
+                        {
                             log_info!("publish error {_err:?}");
                         }
                     }
@@ -123,11 +135,9 @@ impl MemoryHub {
         Ok(())
     }
 
-    async fn subscribe(
-        &self,
-        _transport_id: &str,
-        sub: Subscription,
-    ) -> Result<SubscriptionHandle> {
+    async fn subscribe(&self, _transport_id: &str, sub: Subscription)
+    -> Result<SubscriptionHandle>
+    {
         // ---
         log_debug!("{_transport_id}: subscribe to {sub:?}");
 
@@ -139,7 +149,8 @@ impl MemoryHub {
         Ok(SubscriptionHandle { inbox: rx })
     }
 
-    async fn close(&self, _transport_id: &str) -> Result<()> {
+    async fn close(&self, _transport_id: &str) -> Result<()>
+    {
         // ---
         log_debug!("{_transport_id}: closing transport...");
 
@@ -149,8 +160,10 @@ impl MemoryHub {
     }
 }
 
-impl Default for MemoryHub {
-    fn default() -> Self {
+impl Default for MemoryHub
+{
+    fn default() -> Self
+    {
         // ---
         Self {
             subscriptions: RwLock::new(HashMap::new()),
@@ -161,7 +174,8 @@ impl Default for MemoryHub {
 /// Process-global hub used by [`create_memory_transport`].
 static GLOBAL_HUB: OnceLock<Arc<MemoryHub>> = OnceLock::new();
 
-fn global_hub() -> Arc<MemoryHub> {
+fn global_hub() -> Arc<MemoryHub>
+{
     GLOBAL_HUB.get_or_init(MemoryHub::new).clone()
 }
 
@@ -170,16 +184,19 @@ fn global_hub() -> Arc<MemoryHub> {
 /// Routes messages through a shared [`MemoryHub`], simulating a message broker
 /// within the process. Multiple transport instances sharing the same hub can
 /// publish and receive each other's messages.
-struct MemoryTransport {
+struct MemoryTransport
+{
     // ---
     base: TransportBase,
     hub: Arc<MemoryHub>,
 }
 
 #[async_trait::async_trait]
-impl Transport for MemoryTransport {
+impl Transport for MemoryTransport
+{
     // ---
-    fn base(&self) -> &TransportBase {
+    fn base(&self) -> &TransportBase
+    {
         &self.base
     }
 
@@ -190,7 +207,8 @@ impl Transport for MemoryTransport {
     ///
     /// This behavior defines the reference matching semantics for the
     /// transport layer.
-    async fn publish(&self, env: Envelope) -> Result<()> {
+    async fn publish(&self, env: Envelope) -> Result<()>
+    {
         self.hub.publish(self.transport_id(), env).await
     }
 
@@ -199,7 +217,8 @@ impl Transport for MemoryTransport {
     /// Once this function returns successfully, any subsequent calls to
     /// `publish()` with matching addresses are deliverable to the returned
     /// inbox.
-    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
+    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle>
+    {
         self.hub.subscribe(self.transport_id(), sub).await
     }
 
@@ -208,7 +227,8 @@ impl Transport for MemoryTransport {
     /// Clears all subscriptions from the shared hub. Note that if other
     /// transports share the same hub, their subscriptions are also cleared.
     /// Use per-test hubs via [`create_memory_transport_with_hub`] to avoid this.
-    async fn close(&self) -> Result<()> {
+    async fn close(&self) -> Result<()>
+    {
         self.hub.close(self.transport_id()).await
     }
 }
@@ -224,7 +244,8 @@ impl Transport for MemoryTransport {
 /// # Errors
 ///
 /// Currently infallible — always returns `Ok`.
-pub async fn create_memory_transport(config: TransportConfig) -> Result<TransportPtr> {
+pub async fn create_memory_transport(config: TransportConfig) -> Result<TransportPtr>
+{
     // ---
     create_memory_transport_with_hub(config, global_hub()).await
 }
@@ -248,7 +269,8 @@ pub async fn create_memory_transport(config: TransportConfig) -> Result<Transpor
 pub async fn create_memory_transport_with_hub(
     config: TransportConfig,
     hub: Arc<MemoryHub>,
-) -> Result<TransportPtr> {
+) -> Result<TransportPtr>
+{
     // ---
     log_debug!("{}: create memory transport", config.node_id);
 

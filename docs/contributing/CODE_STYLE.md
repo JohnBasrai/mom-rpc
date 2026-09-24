@@ -1,10 +1,30 @@
 # Code Style Guide
 
-This project uses `rustfmt` for consistent code formatting.
+This project uses `cargo xfmt` for consistent code formatting. `cargo xfmt`
+applies the repository's `rustfmt.toml`, including formatting options that
+require the nightly Rust formatter. The formatting check in CI is authoritative.
+
+## Formatting Commands
+
+Run the formatter after changing Rust code:
+
+```bash
+cargo xfmt
+```
+
+Check formatting without modifying files:
+
+```bash
+cargo xfmt --check
+```
+
+Do not substitute `cargo fmt` for these commands; it does not apply the full
+repository formatting contract.
 
 ## Visual Separators
 
-Since `rustfmt` removes blank lines at the start of impl blocks, function bodies, and module blocks, we use comment separators `// ---` for visual clarity.
+Since the formatter removes blank lines at the start of impl blocks, function
+bodies, and module blocks, we use comment separators `// ---` for visual clarity.
 
 ### When to Use Separators
 
@@ -141,11 +161,5 @@ let config = RpcConfig {
 Or manually:
 
 ```bash
-cargo fmt --all -- --check
-```
-
-To auto-format:
-
-```bash
-cargo fmt
+cargo xfmt --check
 ```

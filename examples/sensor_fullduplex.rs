@@ -24,15 +24,17 @@
 
 mod common;
 
+use std::time::Duration;
+
 use common::{ReadHumidity, ReadPressure, ReadTemperature, SensorReading, TemperatureUnit};
 use mom_rpc::{Result, RpcBrokerBuilder, TransportBuilder};
-use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 
 const NODE_ID: &str = "env-sensor-fd-42";
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<()>
+{
     // ---
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -143,13 +145,15 @@ async fn main() -> Result<()> {
 // RPC Handler Functions
 // ============================================================================
 
-async fn handle_temperature(req: ReadTemperature) -> Result<SensorReading> {
+async fn handle_temperature(req: ReadTemperature) -> Result<SensorReading>
+{
     // ---
     // Simulate sensor read with slight delay
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let celsius = 22.5_f32;
-    let (value, unit) = match req.unit {
+    let (value, unit) = match req.unit
+    {
         TemperatureUnit::Celsius => (celsius, "°C"),
         TemperatureUnit::Fahrenheit => (celsius * 9.0 / 5.0 + 32.0, "°F"),
     };
@@ -161,7 +165,8 @@ async fn handle_temperature(req: ReadTemperature) -> Result<SensorReading> {
     })
 }
 
-async fn handle_humidity(_req: ReadHumidity) -> Result<SensorReading> {
+async fn handle_humidity(_req: ReadHumidity) -> Result<SensorReading>
+{
     // ---
     tokio::time::sleep(Duration::from_millis(30)).await;
 
@@ -172,7 +177,8 @@ async fn handle_humidity(_req: ReadHumidity) -> Result<SensorReading> {
     })
 }
 
-async fn handle_pressure(_req: ReadPressure) -> Result<SensorReading> {
+async fn handle_pressure(_req: ReadPressure) -> Result<SensorReading>
+{
     // ---
     tokio::time::sleep(Duration::from_millis(40)).await;
 
@@ -183,7 +189,8 @@ async fn handle_pressure(_req: ReadPressure) -> Result<SensorReading> {
     })
 }
 
-fn current_time_ms() -> u64 {
+fn current_time_ms() -> u64
+{
     // ---
     use std::time::{SystemTime, UNIX_EPOCH};
 

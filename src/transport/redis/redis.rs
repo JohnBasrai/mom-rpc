@@ -51,22 +51,16 @@
 //! - Delivery is best-effort and non-durable.
 //! - There is no replay, persistence, or retained-message support.
 
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
 use futures_util::StreamExt;
-
 use redis::aio::{MultiplexedConnection, PubSubSink, PubSubStream};
-
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
-
-use tokio::sync::{mpsc, oneshot, Notify, RwLock};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{Notify, RwLock, mpsc, oneshot},
+    task::JoinHandle,
+};
 
 use crate::{
-    //
-    log_debug,
-    log_error,
-    log_info,
     Envelope,
     Result,
     RpcError,
@@ -76,6 +70,10 @@ use crate::{
     TransportBase,
     TransportConfig,
     TransportPtr,
+    //
+    log_debug,
+    log_error,
+    log_info,
 };
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
@@ -96,52 +94,64 @@ type PendingSubscribe = Arc<RwLock<bool>>;
 // Actor commands
 //
 
-enum Cmd {
+enum Cmd
+{
     //
-    Publish {
+    Publish
+    {
         env: Envelope,
         resp: oneshot::Sender<Result<()>>,
     },
-    Subscribe {
+    Subscribe
+    {
         topic: String,
         resp: oneshot::Sender<Result<Ack>>,
     },
-    Close {
-        resp: oneshot::Sender<Result<()>>,
+    Close
+    {
+        resp: oneshot::Sender<Result<()>>
     },
 }
 
 /// Actor Ack
 #[derive(PartialEq)]
-pub enum Ack {
+pub enum Ack
+{
     Ok,
     Retry,
 }
 
-enum ActorStep {
+enum ActorStep
+{
     //
     Continue,
     Stop,
 }
 
-impl Cmd {
+impl Cmd
+{
     // ---
 
     /// Dispatches an actor command to the correct handler on the actor.
-    async fn handle(self, actor: &mut RedisActor) -> ActorStep {
+    async fn handle(self, actor: &mut RedisActor) -> ActorStep
+    {
         // ---
 
-        match self {
-            Cmd::Publish { env, resp } => {
+        match self
+        {
+            Cmd::Publish { env, resp } =>
+            {
                 let result = actor.handle_publish(env).await;
                 let _ = resp.send(result);
                 ActorStep::Continue
             }
-            Cmd::Subscribe { topic, resp } => {
+            Cmd::Subscribe { topic, resp } =>
+            {
                 actor.handle_subscribe(topic, resp).await;
                 ActorStep::Continue
             }
-            Cmd::Close { resp } => {
+            Cmd::Close { resp } =>
+            {
                 actor.handle_close().await;
                 let _ = resp.send(Ok(()));
                 ActorStep::Stop
@@ -155,7 +165,8 @@ impl Cmd {
 /// Represents a single broker connection pair and provides best-effort,
 /// non-durable message delivery consistent with memory and MQTT transport
 /// semantics.
-pub struct RedisTransport {
+pub struct RedisTransport
+{
     // ---
     base: TransportBase,
     cmd_tx: mpsc::Sender<Cmd>,
@@ -163,7 +174,8 @@ pub struct RedisTransport {
     tasks: TaskList,
 }
 
-impl RedisTransport {
+impl RedisTransport
+{
     // ---
 
     /// Creates a new Redis transport from the given connections.
@@ -176,7 +188,8 @@ impl RedisTransport {
         subscribe_sink: PubSubSink,
         subscribe_stream: PubSubStream,
         shutdown: Arc<Notify>,
-    ) -> TransportPtr {
+    ) -> TransportPtr
+    {
         // ---
 
         let (cmd_tx, cmd_rx) = mpsc::channel(64);
@@ -212,7 +225,8 @@ impl RedisTransport {
     }
 }
 
-struct RedisActor {
+struct RedisActor
+{
     // ---
     transport_id: String, // for logging only
     publish_conn: MultiplexedConnection,
@@ -225,13 +239,16 @@ struct RedisActor {
     reconnect: bool,
 }
 
-impl RedisActor {
+impl RedisActor
+{
     // ---
 
-    async fn run(mut self) {
+    async fn run(mut self)
+    {
         // ---
 
-        loop {
+        loop
+        {
             tokio::select! {
                 cmd = self.cmd_rx.recv() => {
                     match cmd {
@@ -271,14 +288,17 @@ impl RedisActor {
     ///
     /// Serializes the envelope as JSON and issues a Redis PUBLISH command
     /// on the dedicated multiplexed publish connection.
-    async fn handle_publish(&mut self, env: Envelope) -> Result<()> {
+    async fn handle_publish(&mut self, env: Envelope) -> Result<()>
+    {
         // ---
 
         let topic = env.address.0.as_ref().to_string();
 
-        let payload = match serde_json::to_string(&env) {
+        let payload = match serde_json::to_string(&env)
+        {
             Ok(p) => p,
-            Err(err) => {
+            Err(err) =>
+            {
                 let msg = format!(
                     "{}: failed to serialize publish payload: {err}",
                     self.transport_id
@@ -313,14 +333,16 @@ impl RedisActor {
     ///
     /// Subscriptions are serialized (one at a time) via `subscribe_pending`
     /// to prevent the actor from blocking `cmd_rx` with concurrent awaits.
-    async fn handle_subscribe(&mut self, topic: String, resp: oneshot::Sender<Result<Ack>>) {
+    async fn handle_subscribe(&mut self, topic: String, resp: oneshot::Sender<Result<Ack>>)
+    {
         // ---
 
         let transport_id = self.transport_id.as_str();
 
         {
             let mut pending = self.subscribe_pending.write().await;
-            if *pending {
+            if *pending
+            {
                 log_debug!("{transport_id}: handle_subscribe: subscribe already pending, retry...");
                 let _ = resp.send(Ok(Ack::Retry));
                 return;
@@ -335,12 +357,15 @@ impl RedisActor {
             *pending = false;
         }
 
-        match result {
-            Ok(()) => {
+        match result
+        {
+            Ok(()) =>
+            {
                 log_info!("{transport_id}: successfully subscribed to topic {topic}");
                 let _ = resp.send(Ok(Ack::Ok));
             }
-            Err(err) => {
+            Err(err) =>
+            {
                 let msg = format!("{transport_id}: failed to subscribe to topic {topic}: {err}");
                 log_error!("{msg}");
                 let _ = resp.send(Err(RpcError::Transport(msg)));
@@ -349,7 +374,8 @@ impl RedisActor {
     }
 
     /// Disconnects from the Redis broker.
-    async fn handle_close(&mut self) {
+    async fn handle_close(&mut self)
+    {
         // ---
 
         log_debug!("{}: disconnecting redis client", self.transport_id);
@@ -361,14 +387,17 @@ impl RedisActor {
     /// Deserializes the envelope, looks up matching subscribers, and delivers
     /// the message to all live subscribers. Dead or slow subscribers are
     /// automatically evicted during delivery.
-    async fn handle_incoming(_transport_id: String, subscribers: SubscriberMap, msg: redis::Msg) {
+    async fn handle_incoming(_transport_id: String, subscribers: SubscriberMap, msg: redis::Msg)
+    {
         // ---
 
         let topic = msg.get_channel_name().to_string();
 
-        let payload: String = match msg.get_payload() {
+        let payload: String = match msg.get_payload()
+        {
             Ok(p) => p,
-            Err(_err) => {
+            Err(_err) =>
+            {
                 log_debug!(
                     "{}: failed to get payload on topic {topic}: {_err}",
                     _transport_id
@@ -377,9 +406,11 @@ impl RedisActor {
             }
         };
 
-        let env = match serde_json::from_str::<Envelope>(&payload) {
+        let env = match serde_json::from_str::<Envelope>(&payload)
+        {
             Ok(env) => env,
-            Err(_err) => {
+            Err(_err) =>
+            {
                 log_debug!(
                     "{}: invalid envelope on topic {topic}: {_err}",
                     _transport_id
@@ -393,25 +424,32 @@ impl RedisActor {
             map.get(&topic).cloned()
         };
 
-        let Some(senders) = senders else {
+        let Some(senders) = senders
+        else
+        {
             return;
         };
 
         let original_len = senders.len();
         let mut survivors = Vec::with_capacity(original_len);
 
-        for tx in senders {
-            match tx.try_send(env.clone()) {
-                Ok(()) => {
+        for tx in senders
+        {
+            match tx.try_send(env.clone())
+            {
+                Ok(()) =>
+                {
                     survivors.push(tx);
                 }
-                Err(_) => {
+                Err(_) =>
+                {
                     // Channel is full or receiver was dropped; evict.
                 }
             }
         }
 
-        if survivors.len() != original_len {
+        if survivors.len() != original_len
+        {
             let mut map = subscribers.write().await;
             map.insert(topic, survivors);
         }
@@ -419,14 +457,17 @@ impl RedisActor {
 } // RedisActor
 
 #[async_trait::async_trait]
-impl Transport for RedisTransport {
+impl Transport for RedisTransport
+{
     // ---
 
-    fn base(&self) -> &TransportBase {
+    fn base(&self) -> &TransportBase
+    {
         &self.base
     }
 
-    async fn publish(&self, env: Envelope) -> Result<()> {
+    async fn publish(&self, env: Envelope) -> Result<()>
+    {
         // ---
 
         let (tx, rx) = oneshot::channel();
@@ -445,7 +486,8 @@ impl Transport for RedisTransport {
         })?
     }
 
-    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle> {
+    async fn subscribe(&self, sub: Subscription) -> Result<SubscriptionHandle>
+    {
         // ---
 
         let topic = sub.0.as_ref().to_string();
@@ -456,7 +498,8 @@ impl Transport for RedisTransport {
             map.entry(topic.clone()).or_default().push(tx);
         }
 
-        loop {
+        loop
+        {
             let (resp_tx, resp_rx) = oneshot::channel();
 
             self.cmd_tx
@@ -473,8 +516,10 @@ impl Transport for RedisTransport {
             match resp_rx.await.map_err(|e| {
                 let msg = format!("actor resp_rx channel read failed:{e}");
                 RpcError::Transport(msg)
-            })? {
-                Ok(Ack::Retry) => {
+            })?
+            {
+                Ok(Ack::Retry) =>
+                {
                     let delay_ms = 200;
                     log_debug!(
                         "{}: subscribe: Got Ack::Retry, retrying in {delay_ms}ms...",
@@ -491,7 +536,8 @@ impl Transport for RedisTransport {
         Ok(SubscriptionHandle { inbox: rx })
     }
 
-    async fn close(&self) -> Result<()> {
+    async fn close(&self) -> Result<()>
+    {
         // ---
 
         let (tx, rx) = oneshot::channel();
@@ -500,7 +546,8 @@ impl Transport for RedisTransport {
         let _ = rx.await;
 
         let mut tasks = self.tasks.write().await;
-        while let Some(handle) = tasks.pop() {
+        while let Some(handle) = tasks.pop()
+        {
             let _ = handle.await;
         }
 
@@ -515,14 +562,18 @@ impl Transport for RedisTransport {
 /// Returns an error if:
 /// - The broker URI is missing or cannot be parsed
 /// - Connection to the Redis broker fails (both connections are eager)
-pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr> {
+pub async fn create_transport(config: TransportConfig) -> Result<TransportPtr>
+{
     // ---
 
-    let uri = if config.uri.is_empty() {
+    let uri = if config.uri.is_empty()
+    {
         return Err(RpcError::Transport(
             "Redis transport requires URI".to_string(),
         ));
-    } else {
+    }
+    else
+    {
         &config.uri
     };
 

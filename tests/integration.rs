@@ -5,12 +5,7 @@
     clippy::panic_in_result_fn
 )]
 
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::task::JoinHandle;
-
-use tracing::info;
+use std::{sync::Arc, time::Duration};
 
 #[allow(unused)]
 use mom_rpc::{
@@ -25,9 +20,13 @@ use mom_rpc::{
     TransportMode,
     TransportPtr,
 };
+use serde::{Deserialize, Serialize};
+use tokio::task::JoinHandle;
+use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ReadTemperature {
+struct ReadTemperature
+{
     unit: TemperatureUnit,
 }
 
@@ -38,14 +37,16 @@ struct ReadHumidity;
 struct ReadPressure;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct SensorReading {
+struct SensorReading
+{
     value: f32,
     unit: String,
     timestamp_ms: u64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-enum TemperatureUnit {
+enum TemperatureUnit
+{
     Celsius,
     Fahrenheit,
 }
@@ -53,7 +54,8 @@ enum TemperatureUnit {
 /// Test fixture: a sensor server on an isolated [`MemoryHub`].
 ///
 /// Each `SensorServer` owns the hub so tests are fully isolated from each other.
-struct SensorServer {
+struct SensorServer
+{
     // ---
     _handle: JoinHandle<()>,
     broker: RpcBroker,
@@ -61,9 +63,11 @@ struct SensorServer {
     hub: Arc<MemoryHub>,
 }
 
-impl SensorServer {
+impl SensorServer
+{
     // ---
-    async fn new(id: &str) -> Result<Self> {
+    async fn new(id: &str) -> Result<Self>
+    {
         // ---
         let node_id = format!("sensor-{id}");
         let hub = MemoryHub::new();
@@ -74,11 +78,13 @@ impl SensorServer {
         // Register temperature reading handler
         broker.register_rpc_handler("temperature", |req: ReadTemperature| async move {
             let base_temp = 23.5; // Base temperature in Celsius
-            let value = match req.unit {
+            let value = match req.unit
+            {
                 TemperatureUnit::Celsius => base_temp,
                 TemperatureUnit::Fahrenheit => base_temp * 9.0 / 5.0 + 32.0,
             };
-            let unit = match req.unit {
+            let unit = match req.unit
+            {
                 TemperatureUnit::Celsius => "°C",
                 TemperatureUnit::Fahrenheit => "°F",
             };
@@ -129,23 +135,27 @@ impl SensorServer {
         })
     }
 
-    async fn shutdown(self) -> Result<()> {
+    async fn shutdown(self) -> Result<()>
+    {
         // ---
         self.broker.shutdown().await;
         Ok(())
     }
 
-    fn node_id(&self) -> &str {
+    fn node_id(&self) -> &str
+    {
         &self.node_id
     }
 
-    fn hub(&self) -> Arc<MemoryHub> {
+    fn hub(&self) -> Arc<MemoryHub>
+    {
         self.hub.clone()
     }
 }
 
 /// Create a server-mode transport on the given hub.
-async fn server_transport(node_id: &str, hub: Arc<MemoryHub>) -> Result<TransportPtr> {
+async fn server_transport(node_id: &str, hub: Arc<MemoryHub>) -> Result<TransportPtr>
+{
     // ---
     mom_rpc::create_memory_transport_with_hub(
         TransportConfig {
@@ -163,7 +173,8 @@ async fn server_transport(node_id: &str, hub: Arc<MemoryHub>) -> Result<Transpor
 }
 
 /// Create a client-mode transport on the given hub.
-async fn client_transport(node_id: &str, hub: Arc<MemoryHub>) -> Result<TransportPtr> {
+async fn client_transport(node_id: &str, hub: Arc<MemoryHub>) -> Result<TransportPtr>
+{
     // ---
     mom_rpc::create_memory_transport_with_hub(
         TransportConfig {
@@ -181,7 +192,8 @@ async fn client_transport(node_id: &str, hub: Arc<MemoryHub>) -> Result<Transpor
 }
 
 #[tokio::test]
-async fn test_basic_request() -> Result<()> {
+async fn test_basic_request() -> Result<()>
+{
     // ---
     init_tracing();
     info!("Starting basic sensor reading test");
@@ -209,7 +221,8 @@ async fn test_basic_request() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_concurrent_requests() -> Result<()> {
+async fn test_concurrent_requests() -> Result<()>
+{
     // ---
     init_tracing();
 
@@ -217,7 +230,8 @@ async fn test_concurrent_requests() -> Result<()> {
     let node_id = server.node_id().to_string();
     let mut handles = Vec::new();
 
-    for i in 0..10 {
+    for i in 0..10
+    {
         // ---
         let transport = client_transport(&format!("controller-{i}"), server.hub()).await?;
         let client = RpcBrokerBuilder::new(transport).build()?;
@@ -225,9 +239,12 @@ async fn test_concurrent_requests() -> Result<()> {
 
         handles.push(tokio::spawn(async move {
             // Alternate between temperature readings in different units
-            let unit = if i % 2 == 0 {
+            let unit = if i % 2 == 0
+            {
                 TemperatureUnit::Celsius
-            } else {
+            }
+            else
+            {
                 TemperatureUnit::Fahrenheit
             };
             let resp: SensorReading = client
@@ -238,12 +255,16 @@ async fn test_concurrent_requests() -> Result<()> {
         }));
     }
 
-    for (i, task) in handles.into_iter().enumerate() {
+    for (i, task) in handles.into_iter().enumerate()
+    {
         let (value, unit) = task.await.unwrap();
-        if i % 2 == 0 {
+        if i % 2 == 0
+        {
             assert_eq!(value, 23.5);
             assert_eq!(unit, "°C");
-        } else {
+        }
+        else
+        {
             assert_eq!(value, 74.3);
             assert_eq!(unit, "°F");
         }
@@ -254,7 +275,8 @@ async fn test_concurrent_requests() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_timeout() -> Result<()> {
+async fn test_timeout() -> Result<()>
+{
     // ---
     init_tracing();
 
@@ -266,11 +288,13 @@ async fn test_timeout() -> Result<()> {
     // Register a slow temperature sensor that takes 1 second to respond
     server.register_rpc_handler("temperature", |req: ReadTemperature| async move {
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        let value = match req.unit {
+        let value = match req.unit
+        {
             TemperatureUnit::Celsius => 23.5,
             TemperatureUnit::Fahrenheit => 74.3,
         };
-        let unit = match req.unit {
+        let unit = match req.unit
+        {
             TemperatureUnit::Celsius => "°C",
             TemperatureUnit::Fahrenheit => "°F",
         };
@@ -308,7 +332,8 @@ async fn test_timeout() -> Result<()> {
 
 #[tokio::test]
 #[ignore] // TODO: Implement error response protocol
-async fn test_error_response() -> Result<()> {
+async fn test_error_response() -> Result<()>
+{
     // ---
     init_tracing();
 
@@ -320,7 +345,8 @@ async fn test_error_response() -> Result<()> {
     // Register a sensor that fails for specific conditions
     server.register_rpc_handler("temperature", |req: ReadTemperature| async move {
         // Simulate sensor malfunction for Fahrenheit readings
-        match req.unit {
+        match req.unit
+        {
             TemperatureUnit::Fahrenheit => Err(RpcError::InvalidRequest),
             TemperatureUnit::Celsius => Ok(SensorReading {
                 value: 23.5,
@@ -368,7 +394,8 @@ async fn test_error_response() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_multiple_clients() -> Result<()> {
+async fn test_multiple_clients() -> Result<()>
+{
     // ---
     init_tracing();
 
@@ -413,7 +440,8 @@ async fn test_multiple_clients() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_request_with_timeout_success() -> Result<()> {
+async fn test_request_with_timeout_success() -> Result<()>
+{
     // ---
     init_tracing();
 
@@ -434,7 +462,8 @@ async fn test_request_with_timeout_success() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_request_with_timeout_expires() -> Result<()> {
+async fn test_request_with_timeout_expires() -> Result<()>
+{
     // ---
     init_tracing();
 
@@ -472,8 +501,10 @@ async fn test_request_with_timeout_expires() -> Result<()> {
         )
         .await;
 
-    match result {
-        Err(RpcError::Timeout) => {}
+    match result
+    {
+        Err(RpcError::Timeout) =>
+        {}
         Ok(_) => panic!("expected timeout but request succeeded"),
         Err(e) => panic!("expected Timeout error but got: {e}"),
     }
@@ -483,7 +514,8 @@ async fn test_request_with_timeout_expires() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_run_blocks_until_shutdown() -> Result<()> {
+async fn test_run_blocks_until_shutdown() -> Result<()>
+{
     // ---
     use std::sync::atomic::{AtomicBool, Ordering};
     init_tracing();
@@ -494,11 +526,13 @@ async fn test_run_blocks_until_shutdown() -> Result<()> {
     let broker = RpcBrokerBuilder::new(transport).build()?;
 
     broker.register_rpc_handler("temperature", |req: ReadTemperature| async move {
-        let value = match req.unit {
+        let value = match req.unit
+        {
             TemperatureUnit::Celsius => 23.5,
             TemperatureUnit::Fahrenheit => 74.3,
         };
-        let unit = match req.unit {
+        let unit = match req.unit
+        {
             TemperatureUnit::Celsius => "°C",
             TemperatureUnit::Fahrenheit => "°F",
         };
@@ -540,7 +574,8 @@ async fn test_run_blocks_until_shutdown() -> Result<()> {
     feature = "transport_redis",  // <-- needed this line.
 )))]
 #[tokio::test]
-async fn test_transport_builder_fallback_to_memory() -> Result<()> {
+async fn test_transport_builder_fallback_to_memory() -> Result<()>
+{
     // ---
     init_tracing();
 
@@ -586,7 +621,8 @@ use std::sync::Once;
 
 static INIT: Once = Once::new();
 
-fn init_tracing() {
+fn init_tracing()
+{
     // ---
     INIT.call_once(|| {
         let _ = tracing_subscriber::fmt()

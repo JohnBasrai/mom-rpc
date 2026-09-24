@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReadTemperature {
+pub struct ReadTemperature
+{
     // ---
     pub unit: TemperatureUnit,
 }
@@ -13,7 +14,8 @@ pub struct ReadHumidity;
 pub struct ReadPressure;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SensorReading {
+pub struct SensorReading
+{
     // ---
     pub value: f32,
     pub unit: String,
@@ -21,7 +23,8 @@ pub struct SensorReading {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum TemperatureUnit {
+pub enum TemperatureUnit
+{
     Celsius,
     Fahrenheit,
 }

@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::fmt;
+
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Unique correlation identifier used to match RPC requests and responses.
@@ -9,43 +10,54 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CorrelationId(String);
 
-impl CorrelationId {
+impl CorrelationId
+{
     /// Generate a new unique correlation ID.
-    pub fn generate() -> Self {
+    pub fn generate() -> Self
+    {
         Self(Uuid::new_v4().to_string())
     }
 
     /// Borrow the correlation ID as a string slice.
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str
+    {
         &self.0
     }
 }
 
-impl From<String> for CorrelationId {
-    fn from(value: String) -> Self {
+impl From<String> for CorrelationId
+{
+    fn from(value: String) -> Self
+    {
         Self(value)
     }
 }
 
-impl From<&str> for CorrelationId {
-    fn from(value: &str) -> Self {
+impl From<&str> for CorrelationId
+{
+    fn from(value: &str) -> Self
+    {
         Self(value.to_string())
     }
 }
 
-impl fmt::Display for CorrelationId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl fmt::Display for CorrelationId
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
         f.write_str(&self.0)
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod tests
+{
     // ---
     use super::*;
 
     #[test]
-    fn test_generate_unique() {
+    fn test_generate_unique()
+    {
         // ---
         let id1 = CorrelationId::generate();
         let id2 = CorrelationId::generate();
@@ -53,7 +65,8 @@ mod tests {
     }
 
     #[test]
-    fn test_format() {
+    fn test_format()
+    {
         // ---
         let id = CorrelationId::generate();
         let s = id.to_string();
